@@ -1258,66 +1258,79 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
             const line = lines[i];
             const trimmedLine = line.trim();
             
-            // 检测 proxies: 段落
-            if (trimmedLine === 'proxies:') {
-                inProxiesSection = true;
-                inProxyGroupsSection = false;
-                newLines.push(line);
-                // 在 proxies 段落开头插入中转节点
-                if (!proxiesInserted && 中转节点列表.length > 0) {
-                    const 中转节点YAML = 生成中转节点YAML();
-                    newLines.push(...中转节点YAML);
-                    proxiesInserted = true;
+            // 顶级段落检测 (不以空格或制表符开头，且以冒号结尾)
+            if (!line.startsWith(' ') && !line.startsWith('\t') && trimmedLine.endsWith(':')) {
+                if (trimmedLine === 'proxies:') {
+                    inProxiesSection = true;
+                    inProxyGroupsSection = false;
+                    newLines.push(line);
+                    // 在 proxies 段落开头插入中转节点
+                    if (!proxiesInserted && 中转节点列表.length > 0) {
+                        const 中转节点YAML = 生成中转节点YAML();
+                        newLines.push(...中转节点YAML);
+                        proxiesInserted = true;
+                    }
+                    continue;
+                } else if (trimmedLine === 'proxy-groups:') {
+                    inProxiesSection = false;
+                    inProxyGroupsSection = true;
+                    newLines.push(line);
+                    // 在 proxy-groups 段落开头插入中转选择组
+                    if (!proxyGroupsInserted && 中转节点列表.length > 0) {
+                        const 中转选择组YAML = 生成中转选择组YAML();
+                        newLines.push(...中转选择组YAML);
+                        proxyGroupsInserted = true;
+                    }
+                    continue;
+                } else {
+                    // 其他顶级段落，重置状态
+                    inProxiesSection = false;
+                    inProxyGroupsSection = false;
                 }
-                continue;
-            }
-            
-            // 检测 proxy-groups: 段落
-            if (trimmedLine === 'proxy-groups:') {
-                inProxiesSection = false;
-                inProxyGroupsSection = true;
-                newLines.push(line);
-                // 在 proxy-groups 段落开头插入中转选择组
-                if (!proxyGroupsInserted && 中转节点列表.length > 0) {
-                    const 中转选择组YAML = 生成中转选择组YAML();
-                    newLines.push(...中转选择组YAML);
-                    proxyGroupsInserted = true;
-                }
-                continue;
-            }
-            
-            // 检测其他顶级段落
-            if (trimmedLine.endsWith(':') && !line.startsWith(' ') && !line.startsWith('\t')) {
-                inProxiesSection = false;
-                inProxyGroupsSection = false;
             }
             
             // 在 proxies 段落中，为每个节点添加 dialer-proxy
-            if (inProxiesSection && 当前选择 && trimmedLine.startsWith('- name:')) {
-                // 找到一个代理节点的开始
-                const nodeName = trimmedLine.match(/- name:\s*["']?([^"'\n]+)["']?/)?.[1];
-                // 跳过中转节点本身，不添加 dialer-proxy
-                const isTransitNode = 中转节点列表.some(n => n.name === nodeName) || nodeName === '🛫 链式中转';
-                
-                if (!isTransitNode && nodeName) {
-                    newLines.push(line);
-                    // 查找该节点配置的结束位置，在结束前添加 dialer-proxy
-                    let j = i + 1;
-                    while (j < lines.length) {
-                        const nextLine = lines[j];
-                        const nextTrimmed = nextLine.trim();
-                        // 如果遇到下一个节点或其他段落，停止
-                        if (nextTrimmed.startsWith('- ') || (nextTrimmed.endsWith(':') && !nextLine.startsWith(' '))) {
-                            break;
+            if (inProxiesSection && 当前选择) {
+                // 情况1: Block Style (- name: "xxx")
+                if (trimmedLine.startsWith('- name:')) {
+                    const nodeName = trimmedLine.match(/- name:\s*["']?([^"'\n]+)["']?/)?.[1];
+                    // 跳过中转节点本身
+                    const isTransitNode = 中转节点列表.some(n => n.name === nodeName) || nodeName === '🛫 链式中转';
+                    
+                    if (!isTransitNode && nodeName) {
+                        newLines.push(line);
+                        // 查找该节点配置的结束位置
+                        let j = i + 1;
+                        while (j < lines.length) {
+                            const nextLine = lines[j];
+                            const nextTrimmed = nextLine.trim();
+                            // 如果遇到下一个节点或其他段落，停止
+                            if ((!nextLine.startsWith(' ') && nextLine.includes(':')) || nextTrimmed.startsWith('- ')) {
+                                break;
+                            }
+                            newLines.push(nextLine);
+                            j++;
                         }
-                        newLines.push(nextLine);
-                        j++;
+                        // 添加 dialer-proxy
+                        const indent = line.match(/^(\s*)/)?.[1] || '';
+                        newLines.push(`${indent}    dialer-proxy: "🛫 链式中转"`); // 增加缩进
+                        i = j - 1; // 跳过已处理的行
+                        continue;
                     }
-                    // 添加 dialer-proxy
-                    const indent = line.match(/^(\s*)/)?.[1] || '';
-                    newLines.push(`${indent}  dialer-proxy: "🛫 链式中转"`);
-                    i = j - 1; // 跳过已处理的行
-                    continue;
+                }
+                // 情况2: Flow Style (- {name: xxx, ...})
+                else if (trimmedLine.startsWith('- {') && trimmedLine.includes('name:')) {
+                    // 简单粗暴的替换：在最后的 } 前插入
+                    // 排除已经是中转节点的
+                    const isTransitNode = 中转节点列表.some(n => trimmedLine.includes(`name: ${n.name}`) || trimmedLine.includes(`name: "${n.name}"`));
+                    if (!isTransitNode) {
+                        const lastBraceIndex = line.lastIndexOf('}');
+                        if (lastBraceIndex > -1) {
+                            const modifiedLine = line.substring(0, lastBraceIndex) + `, dialer-proxy: "🛫 链式中转"}` + line.substring(lastBraceIndex + 1);
+                            newLines.push(modifiedLine);
+                            continue;
+                        }
+                    }
                 }
             }
             

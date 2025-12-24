@@ -1307,9 +1307,8 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
                     inGroups = true;
                     // 在进入 proxy-groups 时，先把用户定义的落地节点注入到 proxies 列表末尾
                     if (!userNodesInjected && userNodes.length > 0) {
-                        newLines.push(line); // push 'proxy-groups:' first? NO.
-                        // wait, we are at 'proxy-groups:', so 'proxies' block ended.
-                        // we must inject BEFORE pushing 'proxy-groups:'
+                        // 注意：这里不能先 push line (proxy-groups:)，否则节点会跑到 proxy-groups 下面
+                        // 也不能 push 两次 line
                         for (const node of userNodes) {
                             newLines.push(...generateLandingNodeYaml(node, "🛫 链式中转"));
                         }

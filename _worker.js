@@ -172,6 +172,35 @@ export default {
                             console.error('保存自定义IP失败:', error);
                             return new Response(JSON.stringify({ error: '保存自定义IP失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         }
+                    } else if (访问路径 === 'admin/chain-proxy.json') { // 保存链式代理配置
+                        try {
+                            const chainProxyConfig = await request.json();
+                            // 验证配置结构
+                            if (typeof chainProxyConfig.启用 !== 'boolean') {
+                                return new Response(JSON.stringify({ error: '链式代理配置格式错误：启用字段必须是布尔值' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                            }
+                            if (chainProxyConfig.中转节点列表 && !Array.isArray(chainProxyConfig.中转节点列表)) {
+                                return new Response(JSON.stringify({ error: '链式代理配置格式错误：中转节点列表必须是数组' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                            }
+                            // 验证每个节点的结构
+                            if (chainProxyConfig.中转节点列表) {
+                                for (const node of chainProxyConfig.中转节点列表) {
+                                    if (!node.name || !node.type || !node.server || !node.port) {
+                                        return new Response(JSON.stringify({ error: '链式代理配置格式错误：每个节点必须包含 name, type, server, port 字段' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                                    }
+                                    if (!['vless', 'vmess', 'trojan', 'ss', 'socks5', 'http'].includes(node.type.toLowerCase())) {
+                                        return new Response(JSON.stringify({ error: `链式代理配置格式错误：不支持的代理类型 ${node.type}` }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                                    }
+                                }
+                            }
+                            // 保存到 KV
+                            await env.KV.put('chain-proxy.json', JSON.stringify(chainProxyConfig, null, 2));
+                            ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Chain_Proxy', config_JSON));
+                            return new Response(JSON.stringify({ success: true, message: '链式代理配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        } catch (error) {
+                            console.error('保存链式代理配置失败:', error);
+                            return new Response(JSON.stringify({ error: '保存链式代理配置失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        }
                     } else return new Response(JSON.stringify({ error: '不支持的POST请求路径' }), { status: 404, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                 } else if (访问路径 === 'admin/config.json') {// 处理 admin/config.json 请求，返回JSON
                     return new Response(JSON.stringify(config_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -181,6 +210,23 @@ export default {
                     return new Response(本地优选IP, { status: 200, headers: { 'Content-Type': 'text/plain;charset=utf-8', 'asn': request.cf.asn } });
                 } else if (访问路径 === 'admin/cf.json') {// CF配置文件
                     return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                } else if (访问路径 === 'admin/chain-proxy.json') {// 读取链式代理配置
+                    try {
+                        const chainProxyTxt = await env.KV.get('chain-proxy.json');
+                        if (!chainProxyTxt) {
+                            // 返回默认配置
+                            const defaultChainProxy = {
+                                启用: false,
+                                当前选择: null,
+                                中转节点列表: []
+                            };
+                            return new Response(JSON.stringify(defaultChainProxy, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        }
+                        return new Response(chainProxyTxt, { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                    } catch (error) {
+                        console.error('读取链式代理配置失败:', error);
+                        return new Response(JSON.stringify({ error: '读取链式代理配置失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                    }
                 }
 
                 ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));
@@ -296,7 +342,16 @@ export default {
                                 return null;
                             }
 
-                            return `${协议类型}://00000000-0000-4000-8000-000000000000@${节点地址}:${节点端口}?security=tls&type=${config_JSON.传输协议}&host=example.com&sni=example.com&path=${encodeURIComponent(config_JSON.随机路径 ? 随机路径() + 节点路径 : 节点路径) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent(节点备注)}`;
+                            const normalNode = `${协议类型}://00000000-0000-4000-8000-000000000000@${节点地址}:${节点端口}?security=tls&type=${config_JSON.传输协议}&host=example.com&sni=example.com&path=${encodeURIComponent(config_JSON.随机路径 ? 随机路径() + 节点路径 : 节点路径) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent(节点备注)}`;
+                            
+                            // 如果启用了 SOCKS5，额外生成一个链式节点
+                            if (config_JSON.反代.SOCKS5.账号) {
+                                const chainPath = `/${config_JSON.反代.SOCKS5.启用}=${config_JSON.反代.SOCKS5.账号}/proxyip=${节点地址}:${节点端口}`;
+                                const chainNode = `${协议类型}://00000000-0000-4000-8000-000000000000@${host}:443?security=tls&type=${config_JSON.传输协议}&host=${host}&sni=${host}&path=${encodeURIComponent(chainPath) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent('🔗 ' + 节点备注 + ' -> 家宽')}`;
+                                return [normalNode, chainNode].join('\n');
+                            }
+                            
+                            return normalNode;
                         }).filter(item => item !== null).join('\n');
                     } else { // 订阅转换
                         const 订阅转换URL = `${config_JSON.订阅转换配置.SUBAPI}/sub?target=${订阅类型}&url=${encodeURIComponent(url.protocol + '//' + url.host + '/sub?target=mixed&token=' + 订阅TOKEN + (url.searchParams.has('sub') && url.searchParams.get('sub') != '' ? `&sub=${url.searchParams.get('sub')}` : ''))}&config=${encodeURIComponent(config_JSON.订阅转换配置.SUBCONFIG)}&emoji=${config_JSON.订阅转换配置.SUBEMOJI}&scv=${config_JSON.跳过证书验证}`;
@@ -319,6 +374,10 @@ export default {
                         订阅内容 = JSON.stringify(JSON.parse(订阅内容), null, 2);
                         responseHeaders["content-type"] = 'application/json; charset=utf-8';
                     } else if (订阅类型 === 'clash') {
+                        // 处理链式代理配置
+                        if (config_JSON.链式代理?.启用 && config_JSON.链式代理?.中转节点列表?.length > 0) {
+                            订阅内容 = 添加链式代理到Clash订阅(订阅内容, config_JSON.链式代理);
+                        }
                         responseHeaders["content-type"] = 'application/x-yaml; charset=utf-8';
                     }
                     return new Response(订阅内容, { status: 200, headers: responseHeaders });
@@ -548,12 +607,25 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 
     async function connecttoPry() {
         let newSocket;
+        const 链式配置 = config_JSON?.反代?.链式反代 || { 启用: false };
+        const 实际反代IP = (链式配置.启用 && 链式配置.中转IP) ? (链式配置.中转IP === 'auto' ? 反代IP : 链式配置.中转IP) : null;
+
+        async function 链式连接器(targetHost, targetPort, data) {
+            console.log(`[链式连接] 正在通过 ${实际反代IP} 中转到 ${targetHost}:${targetPort}`);
+            const 所有反代数组 = await 解析地址端口(实际反代IP, targetHost, yourUUID);
+            const vlessHeader = createVlessHeader('00000000-0000-4000-8000-000000000000', targetHost, targetPort);
+            const 完整数据 = new Uint8Array(vlessHeader.length + data.byteLength);
+            完整数据.set(vlessHeader);
+            完整数据.set(new Uint8Array(data), vlessHeader.length);
+            return await connectDirect(atob('UFJPWFlJUC50cDEuMDkwMjI3Lnh5eg=='), 1, 完整数据, 所有反代数组, 启用反代兜底);
+        }
+
         if (启用SOCKS5反代 === 'socks5') {
             console.log(`[SOCKS5代理] 代理到: ${host}:${portNum}`);
-            newSocket = await socks5Connect(host, portNum, rawData);
+            newSocket = await socks5Connect(host, portNum, rawData, 实际反代IP ? 链式连接器 : null);
         } else if (启用SOCKS5反代 === 'http' || 启用SOCKS5反代 === 'https') {
             console.log(`[HTTP代理] 代理到: ${host}:${portNum}`);
-            newSocket = await httpConnect(host, portNum, rawData);
+            newSocket = await httpConnect(host, portNum, rawData, 实际反代IP ? 链式连接器 : null);
         } else {
             console.log(`[反代连接] 代理到: ${host}:${portNum}`);
             const 所有反代数组 = await 解析地址端口(反代IP, host, yourUUID);
@@ -703,9 +775,9 @@ function base64ToArray(b64Str) {
     }
 }
 ////////////////////////////////SOCKS5/HTTP函数///////////////////////////////////////////////
-async function socks5Connect(targetHost, targetPort, initialData) {
+async function socks5Connect(targetHost, targetPort, initialData, socketConnector = null) {
     const { username, password, hostname, port } = parsedSocks5Address;
-    const socket = connect({ hostname, port }), writer = socket.writable.getWriter(), reader = socket.readable.getReader();
+    const socket = socketConnector ? await socketConnector(hostname, port, new Uint8Array(0)) : connect({ hostname, port }), writer = socket.writable.getWriter(), reader = socket.readable.getReader();
     try {
         const authMethods = username && password ? new Uint8Array([0x05, 0x02, 0x00, 0x02]) : new Uint8Array([0x05, 0x01, 0x00]);
         await writer.write(authMethods);
@@ -739,9 +811,9 @@ async function socks5Connect(targetHost, targetPort, initialData) {
     }
 }
 
-async function httpConnect(targetHost, targetPort, initialData) {
+async function httpConnect(targetHost, targetPort, initialData, socketConnector = null) {
     const { username, password, hostname, port } = parsedSocks5Address;
-    const socket = connect({ hostname, port }), writer = socket.writable.getWriter(), reader = socket.readable.getReader();
+    const socket = socketConnector ? await socketConnector(hostname, port, new Uint8Array(0)) : connect({ hostname, port }), writer = socket.writable.getWriter(), reader = socket.readable.getReader();
     try {
         const auth = username && password ? `Proxy-Authorization: Basic ${btoa(`${username}:${password}`)}\r\n` : '';
         const request = `CONNECT ${targetHost}:${targetPort} HTTP/1.1\r\nHost: ${targetHost}:${targetPort}\r\n${auth}User-Agent: Mozilla/5.0\r\nConnection: keep-alive\r\n\r\n`;
@@ -886,6 +958,22 @@ function 随机路径() {
     return `/${随机路径}`;
 }
 
+function createVlessHeader(uuid, host, port) {
+    const uuidBytes = new Uint8Array(uuid.replace(/-/g, '').match(/.{2}/g).map(byte => parseInt(byte, 16)));
+    const hostBytes = new TextEncoder().encode(host);
+    const header = new Uint8Array(24 + hostBytes.length);
+    header[0] = 0; // version
+    header.set(uuidBytes, 1);
+    header[17] = 0; // opt len
+    header[18] = 1; // cmd: connect
+    header[19] = (port >> 8) & 0xff;
+    header[20] = port & 0xff;
+    header[21] = 2; // addr type: domain
+    header[22] = hostBytes.length;
+    header.set(hostBytes, 23);
+    return header;
+}
+
 function 随机替换通配符(h) {
     if (!h?.includes('*')) return h;
     const 字符集 = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -905,6 +993,155 @@ function 批量替换域名(内容, hosts, 每组数量 = 2) {
         count++;
         return currentRandomHost;
     });
+}
+
+// 链式代理功能：为 Clash 订阅添加 dialer-proxy 支持
+function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
+    try {
+        const lines = yamlContent.split('\n');
+        const newLines = [];
+        let inProxiesSection = false;
+        let inProxyGroupsSection = false;
+        let currentIndent = 0;
+        const 中转节点列表 = 链式代理配置.中转节点列表 || [];
+        const 当前选择 = 链式代理配置.当前选择;
+        
+        // 生成中转节点的 YAML 配置
+        const 生成中转节点YAML = () => {
+            const nodeYamlLines = [];
+            for (const node of 中转节点列表) {
+                if (node.type === 'socks5') {
+                    nodeYamlLines.push(`  - name: "${node.name}"`);
+                    nodeYamlLines.push(`    type: socks5`);
+                    nodeYamlLines.push(`    server: ${node.server}`);
+                    nodeYamlLines.push(`    port: ${node.port}`);
+                    if (node.username) nodeYamlLines.push(`    username: ${node.username}`);
+                    if (node.password) nodeYamlLines.push(`    password: ${node.password}`);
+                    nodeYamlLines.push(`    udp: ${node.udp || false}`);
+                } else if (node.type === 'http') {
+                    nodeYamlLines.push(`  - name: "${node.name}"`);
+                    nodeYamlLines.push(`    type: http`);
+                    nodeYamlLines.push(`    server: ${node.server}`);
+                    nodeYamlLines.push(`    port: ${node.port}`);
+                    if (node.username) nodeYamlLines.push(`    username: ${node.username}`);
+                    if (node.password) nodeYamlLines.push(`    password: ${node.password}`);
+                } else if (node.type === 'vless' || node.type === 'vmess' || node.type === 'trojan' || node.type === 'ss') {
+                    // 对于这些类型，直接将完整节点配置添加
+                    nodeYamlLines.push(`  - name: "${node.name}"`);
+                    nodeYamlLines.push(`    type: ${node.type}`);
+                    nodeYamlLines.push(`    server: ${node.server}`);
+                    nodeYamlLines.push(`    port: ${node.port}`);
+                    // 复制其他属性
+                    for (const [key, value] of Object.entries(node)) {
+                        if (!['name', 'type', 'server', 'port'].includes(key) && value !== undefined && value !== null) {
+                            if (typeof value === 'object') {
+                                nodeYamlLines.push(`    ${key}:`);
+                                for (const [subKey, subValue] of Object.entries(value)) {
+                                    nodeYamlLines.push(`      ${subKey}: ${JSON.stringify(subValue)}`);
+                                }
+                            } else {
+                                nodeYamlLines.push(`    ${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`);
+                            }
+                        }
+                    }
+                }
+            }
+            return nodeYamlLines;
+        };
+        
+        // 生成中转选择组
+        const 生成中转选择组YAML = () => {
+            if (中转节点列表.length === 0) return [];
+            const groupLines = [];
+            const nodeNames = 中转节点列表.map(n => n.name);
+            groupLines.push(`  - name: "🛫 链式中转"`);
+            groupLines.push(`    type: select`);
+            groupLines.push(`    proxies:`);
+            groupLines.push(`      - DIRECT`);
+            for (const name of nodeNames) {
+                groupLines.push(`      - "${name}"`);
+            }
+            return groupLines;
+        };
+
+        let proxiesInserted = false;
+        let proxyGroupsInserted = false;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const trimmedLine = line.trim();
+            
+            // 检测 proxies: 段落
+            if (trimmedLine === 'proxies:') {
+                inProxiesSection = true;
+                inProxyGroupsSection = false;
+                newLines.push(line);
+                // 在 proxies 段落开头插入中转节点
+                if (!proxiesInserted && 中转节点列表.length > 0) {
+                    const 中转节点YAML = 生成中转节点YAML();
+                    newLines.push(...中转节点YAML);
+                    proxiesInserted = true;
+                }
+                continue;
+            }
+            
+            // 检测 proxy-groups: 段落
+            if (trimmedLine === 'proxy-groups:') {
+                inProxiesSection = false;
+                inProxyGroupsSection = true;
+                newLines.push(line);
+                // 在 proxy-groups 段落开头插入中转选择组
+                if (!proxyGroupsInserted && 中转节点列表.length > 0) {
+                    const 中转选择组YAML = 生成中转选择组YAML();
+                    newLines.push(...中转选择组YAML);
+                    proxyGroupsInserted = true;
+                }
+                continue;
+            }
+            
+            // 检测其他顶级段落
+            if (trimmedLine.endsWith(':') && !line.startsWith(' ') && !line.startsWith('\t')) {
+                inProxiesSection = false;
+                inProxyGroupsSection = false;
+            }
+            
+            // 在 proxies 段落中，为每个节点添加 dialer-proxy
+            if (inProxiesSection && 当前选择 && trimmedLine.startsWith('- name:')) {
+                // 找到一个代理节点的开始
+                const nodeName = trimmedLine.match(/- name:\s*["']?([^"'\n]+)["']?/)?.[1];
+                // 跳过中转节点本身，不添加 dialer-proxy
+                const isTransitNode = 中转节点列表.some(n => n.name === nodeName) || nodeName === '🛫 链式中转';
+                
+                if (!isTransitNode && nodeName) {
+                    newLines.push(line);
+                    // 查找该节点配置的结束位置，在结束前添加 dialer-proxy
+                    let j = i + 1;
+                    while (j < lines.length) {
+                        const nextLine = lines[j];
+                        const nextTrimmed = nextLine.trim();
+                        // 如果遇到下一个节点或其他段落，停止
+                        if (nextTrimmed.startsWith('- ') || (nextTrimmed.endsWith(':') && !nextLine.startsWith(' '))) {
+                            break;
+                        }
+                        newLines.push(nextLine);
+                        j++;
+                    }
+                    // 添加 dialer-proxy
+                    const indent = line.match(/^(\s*)/)?.[1] || '';
+                    newLines.push(`${indent}  dialer-proxy: "🛫 链式中转"`);
+                    i = j - 1; // 跳过已处理的行
+                    continue;
+                }
+            }
+            
+            newLines.push(line);
+        }
+        
+        return newLines.join('\n');
+    } catch (error) {
+        console.error('添加链式代理到Clash订阅失败:', error);
+        return yamlContent; // 返回原始内容
+    }
 }
 
 async function 读取config_JSON(env, hostname, userID, path, 重置配置 = false) {
@@ -947,6 +1184,20 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
                 账号: 我的SOCKS5账号,
                 白名单: SOCKS5白名单,
             },
+            链式反代: {
+                启用: false,
+                中转IP: "auto",
+            },
+        },
+        // 链式代理配置 - 用于生成带有 dialer-proxy 的 Clash 订阅
+        链式代理: {
+            启用: false,
+            当前选择: null, // 当前选中的中转节点名称
+            中转节点列表: [
+                // 示例结构:
+                // { name: "🇯🇵 JP AWS", type: "vless", server: "jp.example.com", port: 443 }
+                // { name: "🇺🇸 US RCN", type: "socks5", server: "1.2.3.4", port: 1080, username: "user", password: "pass" }
+            ],
         },
         TG: {
             启用: false,
@@ -1021,6 +1272,23 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
         }
     } catch (error) {
         console.error(`读取cf.json出错: ${error.message}`);
+    }
+
+    // 读取链式代理配置
+    const 初始化链式代理配置 = { 启用: false, 当前选择: null, 中转节点列表: [] };
+    config_JSON.链式代理 = config_JSON.链式代理 || 初始化链式代理配置;
+    try {
+        const chainProxyTxt = await env.KV.get('chain-proxy.json');
+        if (chainProxyTxt) {
+            const chainProxyJSON = JSON.parse(chainProxyTxt);
+            config_JSON.链式代理 = {
+                启用: chainProxyJSON.启用 || false,
+                当前选择: chainProxyJSON.当前选择 || null,
+                中转节点列表: chainProxyJSON.中转节点列表 || []
+            };
+        }
+    } catch (error) {
+        console.error(`读取chain-proxy.json出错: ${error.message}`);
     }
 
     config_JSON.加载时间 = (performance.now() - 初始化开始时间).toFixed(2) + 'ms';

@@ -230,7 +230,194 @@ export default {
                 }
 
                 ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));
-                return fetch(Pages静态页面 + '/admin');
+                const originalResponse = await fetch(Pages静态页面 + '/admin');
+                const originalText = await originalResponse.text();
+                
+                // 注入链式代理管理界面脚本
+                const chainProxyScript = `
+                <script>
+                (function() {
+                    function initChainProxyUI() {
+                        const container = document.querySelector('.card-container');
+                        if(!container) return setTimeout(initChainProxyUI, 500);
+
+                        const btn = document.createElement('button');
+                        btn.className = 'btn btn-primary';
+                        btn.style.cssText = 'margin-top:20px;width:100%;background:linear-gradient(135deg, #667eea 0, #764ba2 100%);';
+                        btn.innerHTML = '🔗 链式代理设置';
+                        btn.onclick = showChainProxyModal;
+                        
+                        const footer = container.querySelector('.footer-hint');
+                        if(footer) container.insertBefore(btn, footer);
+                        else container.appendChild(btn);
+                    }
+
+                    async function showChainProxyModal() {
+                        let config = { 启用: false, 中转节点列表: [] };
+                        try {
+                            const res = await fetch('/admin/chain-proxy.json');
+                            if(res.ok) config = await res.json();
+                        } catch(e) { console.error(e); }
+
+                        const modal = document.createElement('div');
+                        modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;justify-content:center;align-items:center;backdrop-filter:blur(5px);';
+                        
+                        const content = document.createElement('div');
+                        content.className = 'card-container';
+                        content.style.cssText = 'width:90%;max-width:550px;max-height:90vh;overflow-y:auto;padding:30px;animation:containerAppear 0.3s ease-out;position:relative;background:rgba(255,255,255,0.95);';
+                        
+                        content.innerHTML = \`
+                            <h2 class="page-title" style="font-size:24px;margin-bottom:20px;text-align:center;">🔗 链式代理配置</h2>
+                            
+                            <div class="form-group">
+                                <label>启用状态</label>
+                                <select id="cp-enable" class="form-control" style="width:100%;padding:12px;border-radius:12px;border:2px solid #e5e7eb;">
+                                    <option value="true" \${config.启用 ? 'selected' : ''}>✅ 启用</option>
+                                    <option value="false" \${!config.启用 ? 'selected' : ''}>❌ 禁用</option>
+                                </select>
+                            </div>
+
+                            <div id="cp-nodes-list" style="margin-bottom:25px;">
+                                <label style="display:block;margin-bottom:10px;font-weight:600;color:#374151;">中转节点列表</label>
+                                <!-- Nodes will be injected here -->
+                            </div>
+
+                            <div class="form-group" style="border-top:2px dashed #eee;padding-top:20px;">
+                                <h3 style="font-size:16px;margin-bottom:15px;color:#374151;">➕ 添加新节点</h3>
+                                <input id="cp-name" placeholder="节点名称 (如: 🇯🇵 JP Relay)" style="width:100%;margin-bottom:10px;padding:12px;border-radius:12px;border:2px solid #e5e7eb;">
+                                <div style="display:flex;gap:10px;margin-bottom:10px;">
+                                    <select id="cp-type" style="flex:1;padding:12px;border-radius:12px;border:2px solid #e5e7eb;">
+                                        <option value="socks5">SOCKS5</option>
+                                        <option value="http">HTTP</option>
+                                        <option value="vless">VLESS</option>
+                                    </select>
+                                    <input id="cp-port" placeholder="端口" type="number" style="flex:1;padding:12px;border-radius:12px;border:2px solid #e5e7eb;">
+                                </div>
+                                <input id="cp-server" placeholder="服务器地址 (IP/域名)" style="width:100%;margin-bottom:10px;padding:12px;border-radius:12px;border:2px solid #e5e7eb;">
+                                <input id="cp-user" placeholder="用户名/UUID (可选)" style="width:100%;margin-bottom:10px;padding:12px;border-radius:12px;border:2px solid #e5e7eb;">
+                                <input id="cp-pass" placeholder="密码 (可选)" style="width:100%;margin-bottom:15px;padding:12px;border-radius:12px;border:2px solid #e5e7eb;">
+                                
+                                <button id="btn-add-node" class="btn btn-secondary" style="width:100%;padding:10px;">添加节点</button>
+                            </div>
+
+                            <div class="btn-group" style="margin-top:25px;justify-content:space-between;display:flex;gap:15px;">
+                                <button id="btn-close" class="btn btn-secondary" style="flex:1;">取消</button>
+                                <button id="btn-save" class="btn btn-primary" style="flex:1;">保存配置</button>
+                            </div>
+                        \`;
+
+                        function renderNodes() {
+                            const listEl = content.querySelector('#cp-nodes-list');
+                            const label = listEl.querySelector('label');
+                            listEl.innerHTML = '';
+                            listEl.appendChild(label);
+
+                            if(!config.中转节点列表 || config.中转节点列表.length === 0) {
+                                listEl.innerHTML += '<div style="color:#9ca3af;font-style:italic;text-align:center;padding:10px;border:2px dashed #e5e7eb;border-radius:12px;">暂无节点</div>';
+                                return;
+                            }
+
+                            config.中转节点列表.forEach((node, index) => {
+                                const item = document.createElement('div');
+                                item.style.cssText = 'background:#f9fafb;padding:12px;border-radius:12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;border:1px solid #e5e7eb;';
+                                item.innerHTML = \`
+                                    <div style="overflow:hidden;">
+                                        <div style="font-weight:600;color:#1f2937;">\${node.name}</div>
+                                        <div style="font-size:12px;color:#6b7280;margin-top:2px;">\${node.type.toUpperCase()} | \${node.server}:\${node.port}</div>
+                                    </div>
+                                    <button class="btn-delete" data-index="\${index}" style="background:#ef4444;color:white;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">删除</button>
+                                \`;
+                                listEl.appendChild(item);
+                            });
+
+                            listEl.querySelectorAll('.btn-delete').forEach(btn => {
+                                btn.onclick = () => {
+                                    config.中转节点列表.splice(btn.dataset.index, 1);
+                                    renderNodes();
+                                };
+                            });
+                        }
+
+                        renderNodes();
+
+                        content.querySelector('#btn-close').onclick = () => document.body.removeChild(modal);
+                        modal.onclick = (e) => { if(e.target === modal) document.body.removeChild(modal); };
+
+                        content.querySelector('#btn-add-node').onclick = () => {
+                            const name = content.querySelector('#cp-name').value.trim();
+                            const type = content.querySelector('#cp-type').value;
+                            const server = content.querySelector('#cp-server').value.trim();
+                            const port = content.querySelector('#cp-port').value.trim();
+                            const user = content.querySelector('#cp-user').value.trim();
+                            const pass = content.querySelector('#cp-pass').value.trim();
+
+                            if(!name || !server || !port) return alert('请填写完整信息');
+
+                            const newNode = { name, type, server, port: parseInt(port) };
+                            if(user) newNode.username = user;
+                            if(user && type === 'vless') newNode.uuid = user;
+                            if(pass) newNode.password = pass;
+
+                            if(!config.中转节点列表) config.中转节点列表 = [];
+                            config.中转节点列表.push(newNode);
+                            
+                            content.querySelector('#cp-name').value = '';
+                            content.querySelector('#cp-server').value = '';
+                            content.querySelector('#cp-port').value = '';
+                            content.querySelector('#cp-user').value = '';
+                            content.querySelector('#cp-pass').value = '';
+                            
+                            renderNodes();
+                        };
+
+                        content.querySelector('#btn-save').onclick = async () => {
+                            config.启用 = content.querySelector('#cp-enable').value === 'true';
+                            if(config.启用 && config.中转节点列表.length > 0 && !config.当前选择) {
+                                config.当前选择 = config.中转节点列表[0].name;
+                            }
+
+                            try {
+                                const btn = content.querySelector('#btn-save');
+                                btn.textContent = '保存中...';
+                                btn.disabled = true;
+                                
+                                const saveRes = await fetch('/admin/chain-proxy.json', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(config)
+                                });
+                                const result = await saveRes.json();
+                                if(result.success) {
+                                    alert('✅ 保存成功！');
+                                    document.body.removeChild(modal);
+                                } else {
+                                    alert('❌ 保存失败: ' + result.error);
+                                    btn.textContent = '保存配置';
+                                    btn.disabled = false;
+                                }
+                            } catch(e) {
+                                alert('❌ 保存出错: ' + e.message);
+                                content.querySelector('#btn-save').disabled = false;
+                            }
+                        };
+
+                        modal.appendChild(content);
+                        document.body.appendChild(modal);
+                    }
+
+                    if(document.readyState === 'loading') {
+                        document.addEventListener('DOMContentLoaded', initChainProxyUI);
+                    } else {
+                        initChainProxyUI();
+                    }
+                })();
+                </script>
+                `;
+                
+                return new Response(originalText.replace('</body>', chainProxyScript + '</body>'), {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html; charset=utf-8' }
+                });
             } else if (访问路径 === 'logout') {//清除cookie并跳转到登录页面
                 const 响应 = new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
                 响应.headers.set('Set-Cookie', 'auth=; Path=/; Max-Age=0; HttpOnly');

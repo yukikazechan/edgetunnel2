@@ -1209,217 +1209,168 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
     try {
         const lines = yamlContent.split('\n');
         const newLines = [];
-        const clonedNodeNames = []; // 存储复制出的链式节点名称
-        const clonedNodeLines = []; // 存储复制出的节点配置行
+        const cfNodeNames = []; // 存储所有检测到的 CF 节点名称
+        const userNodes = 链式代理配置.中转节点列表 || [];
         
-        let inProxiesSection = false;
-        let inProxyGroupsSection = false;
-        let inMainSelectGroup = false; // 是否在“🚀 节点选择”组内
+        let inProxies = false;
+        let inGroups = false;
+        let userNodesInjected = false;
+        let customGroupsInjected = false;
+        let mainGroupModified = false;
         
-        const 中转节点列表 = 链式代理配置.中转节点列表 || [];
-        // const 当前选择 = 链式代理配置.当前选择; // 不再直接依赖当前选择来决定是否生成
-        
-        // 辅助：生成中转节点配置
-        const 生成中转节点YAML = () => {
+        // 辅助：生成落地节点（用户家宽IP）配置，带 dialer-proxy 指向中转组
+        const generateLandingNodeYaml = (node, transitGroupName) => {
             const nodeYamlLines = [];
-            for (const node of 中转节点列表) {
-                if (node.type === 'socks5') {
-                    nodeYamlLines.push(`  - name: "${node.name}"`);
-                    nodeYamlLines.push(`    type: socks5`);
-                    nodeYamlLines.push(`    server: ${node.server}`);
-                    nodeYamlLines.push(`    port: ${node.port}`);
-                    if (node.username) nodeYamlLines.push(`    username: ${node.username}`);
-                    if (node.password) nodeYamlLines.push(`    password: ${node.password}`);
-                    nodeYamlLines.push(`    udp: ${node.udp || false}`);
-                } else if (node.type === 'http') {
-                    nodeYamlLines.push(`  - name: "${node.name}"`);
-                    nodeYamlLines.push(`    type: http`);
-                    nodeYamlLines.push(`    server: ${node.server}`);
-                    nodeYamlLines.push(`    port: ${node.port}`);
-                    if (node.username) nodeYamlLines.push(`    username: ${node.username}`);
-                    if (node.password) nodeYamlLines.push(`    password: ${node.password}`);
-                } else if (node.type === 'vless' || node.type === 'vmess' || node.type === 'trojan' || node.type === 'ss') {
-                    nodeYamlLines.push(`  - name: "${node.name}"`);
-                    nodeYamlLines.push(`    type: ${node.type}`);
-                    nodeYamlLines.push(`    server: ${node.server}`);
-                    nodeYamlLines.push(`    port: ${node.port}`);
-                    for (const [key, value] of Object.entries(node)) {
-                        if (!['name', 'type', 'server', 'port'].includes(key) && value !== undefined && value !== null) {
-                            if (typeof value === 'object') {
-                                nodeYamlLines.push(`    ${key}:`);
-                                for (const [subKey, subValue] of Object.entries(value)) {
-                                    nodeYamlLines.push(`      ${subKey}: ${JSON.stringify(subValue)}`);
-                                }
-                            } else {
-                                nodeYamlLines.push(`    ${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`);
-                            }
-                        }
+            // 将节点名称标记为落地
+            const nodeName = node.name;
+            
+            if (node.type === 'socks5') {
+                nodeYamlLines.push(`  - name: "${nodeName}"`);
+                nodeYamlLines.push(`    type: socks5`);
+                nodeYamlLines.push(`    server: ${node.server}`);
+                nodeYamlLines.push(`    port: ${node.port}`);
+                if (node.username) nodeYamlLines.push(`    username: ${node.username}`);
+                if (node.password) nodeYamlLines.push(`    password: ${node.password}`);
+                nodeYamlLines.push(`    udp: ${node.udp || false}`);
+            } else if (node.type === 'http') {
+                nodeYamlLines.push(`  - name: "${nodeName}"`);
+                nodeYamlLines.push(`    type: http`);
+                nodeYamlLines.push(`    server: ${node.server}`);
+                nodeYamlLines.push(`    port: ${node.port}`);
+                if (node.username) nodeYamlLines.push(`    username: ${node.username}`);
+                if (node.password) nodeYamlLines.push(`    password: ${node.password}`);
+            } else if (['vless', 'vmess', 'trojan', 'ss'].includes(node.type)) {
+                nodeYamlLines.push(`  - name: "${nodeName}"`);
+                nodeYamlLines.push(`    type: ${node.type}`);
+                nodeYamlLines.push(`    server: ${node.server}`);
+                nodeYamlLines.push(`    port: ${node.port}`);
+                for (const [key, value] of Object.entries(node)) {
+                    if (!['name', 'type', 'server', 'port'].includes(key) && value !== undefined && value !== null) {
+                         if (typeof value === 'object') {
+                             nodeYamlLines.push(`    ${key}:`);
+                             for (const [subKey, subValue] of Object.entries(value)) {
+                                 nodeYamlLines.push(`      ${subKey}: ${JSON.stringify(subValue)}`);
+                             }
+                         } else {
+                             nodeYamlLines.push(`    ${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`);
+                         }
                     }
                 }
             }
+            // 添加 dialer-proxy 指向“🛫 链式中转”
+            nodeYamlLines.push(`    dialer-proxy: "${transitGroupName}"`);
             return nodeYamlLines;
         };
-        
-        // 辅助：生成“🛫 链式中转”策略组
-        const 生成中转选择组YAML = () => {
-            if (中转节点列表.length === 0) return [];
-            const groupLines = [];
-            const nodeNames = 中转节点列表.map(n => n.name);
-            groupLines.push(`  - name: "🛫 链式中转"`);
-            groupLines.push(`    type: select`);
-            groupLines.push(`    proxies:`);
-            groupLines.push(`      - DIRECT`); // 默认包含 DIRECT，防止中转失效
-            for (const name of nodeNames) {
-                groupLines.push(`      - "${name}"`);
+
+        // 辅助：生成新策略组
+        const generateNewGroups = (landingNodes, transitNodes) => {
+            const groupsLines = [];
+            
+            // 1. 生成“🔗 链式模式”组：包含所有落地节点（用户家宽IP）
+            // 用户选择此模式 -> 选择落地IP -> 自动经过中转
+            if (landingNodes.length > 0) {
+                groupsLines.push(`  - name: "🔗 链式模式"`);
+                groupsLines.push(`    type: select`);
+                groupsLines.push(`    proxies:`);
+                for (const node of landingNodes) {
+                    groupsLines.push(`      - "${node.name}"`);
+                }
             }
-            return groupLines;
+
+            // 2. 生成“🛫 链式中转”组：包含所有 CF 节点（作为中转层）
+            // 落地节点会通过 dialer-proxy 此时选择的中转IP连接
+            if (transitNodes.length > 0) {
+                groupsLines.push(`  - name: "🛫 链式中转"`);
+                groupsLines.push(`    type: select`); // 允许用户指定中转，或者使用 url-test
+                groupsLines.push(`    proxies:`);
+                groupsLines.push(`      - DIRECT`); // 备用
+                // 限制数量防止过大，或者全放
+                for (const name of transitNodes) {
+                    groupsLines.push(`      - "${name}"`);
+                }
+            }
+            
+            return groupsLines;
         };
 
-        // 辅助：生成“🔗 链式模式”策略组
-        const 生成链式模式组YAML = () => {
-            if (clonedNodeNames.length === 0) return [];
-            const groupLines = [];
-            groupLines.push(`  - name: "🔗 链式模式"`);
-            // type: select 允许用户选择落地IP
-            // type: url-test 自动选择延迟最低的落地IP (用户可能更喜欢 select)
-            groupLines.push(`    type: select`);
-            groupLines.push(`    proxies:`);
-            for (const name of clonedNodeNames) {
-                groupLines.push(`      - "${name}"`);
-            }
-            return groupLines;
-        };
-
-        let proxiesInserted = false;
-        let proxyGroupsInserted = false;
-        
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-            const trimmedLine = line.trim();
+            const trimmed = line.trim();
             
-            // 顶级段落检测
-            if (!line.startsWith(' ') && !line.startsWith('\t') && trimmedLine.endsWith(':')) {
-                if (trimmedLine === 'proxies:') {
-                    inProxiesSection = true;
-                    inProxyGroupsSection = false;
-                    inMainSelectGroup = false;
-                    newLines.push(line);
-                    
-                    // 1. 插入用户配置的中转节点
-                    if (!proxiesInserted && 中转节点列表.length > 0) {
-                        const 中转节点YAML = 生成中转节点YAML();
-                        newLines.push(...中转节点YAML);
-                        proxiesInserted = true;
+            // 检测顶级段落
+            if (!line.startsWith(' ') && !line.startsWith('\t') && trimmed.endsWith(':')) {
+                if (trimmed === 'proxies:') {
+                    inProxies = true;
+                    inGroups = false;
+                } else if (trimmed === 'proxy-groups:') {
+                    inProxies = false;
+                    inGroups = true;
+                    // 在进入 proxy-groups 时，先把用户定义的落地节点注入到 proxies 列表末尾
+                    if (!userNodesInjected && userNodes.length > 0) {
+                        newLines.push(line); // push 'proxy-groups:' first? NO.
+                        // wait, we are at 'proxy-groups:', so 'proxies' block ended.
+                        // we must inject BEFORE pushing 'proxy-groups:'
+                        for (const node of userNodes) {
+                            newLines.push(...generateLandingNodeYaml(node, "🛫 链式中转"));
+                        }
+                        userNodesInjected = true;
                     }
-                    continue;
-                } else if (trimmedLine === 'proxy-groups:') {
-                    inProxiesSection = false;
-                    inProxyGroupsSection = true;
-                    inMainSelectGroup = false;
-                    
-                    // 在进入 proxy-groups 前，先将所有复制出来的节点写入 proxies 列表末尾
-                    // 实际上 clash 要求所有节点都在 proxies 下，我们刚才是在遍历过程中收集的
-                    // 这里需要注意：如果原文件 proxies 在 proxy-groups 之前（通常如此），我们可以在这里插入
-                    if (clonedNodeLines.length > 0) {
-                        newLines.push(...clonedNodeLines);
-                    }
-
-                    newLines.push(line);
-                    
-                    // 2. 插入“🛫 链式中转”组
-                    if (!proxyGroupsInserted && 中转节点列表.length > 0) {
-                        const 中转选择组YAML = 生成中转选择组YAML();
-                        newLines.push(...中转选择组YAML);
-                        
-                        // 3. 插入“🔗 链式模式”组 (包含所有复制的节点)
-                        const 链式模式组YAML = 生成链式模式组YAML();
-                        newLines.push(...链式模式组YAML);
-                        
-                        proxyGroupsInserted = true;
-                    }
-                    continue;
                 } else {
-                    inProxiesSection = false;
-                    inProxyGroupsSection = false;
-                    inMainSelectGroup = false;
+                    // 其他段落（如 rules:），意味着 proxy-groups 结束
+                    if (inGroups && !customGroupsInjected) {
+                        newLines.push(...generateNewGroups(userNodes, cfNodeNames));
+                        customGroupsInjected = true;
+                    }
+                    inProxies = false;
+                    inGroups = false;
                 }
             }
             
-            // 处理 proxies 段落：复制节点
-            if (inProxiesSection) {
-                // 排除中转节点本身 (避免循环复制)
-                let isTransitNode = false;
-                let nodeName = '';
-                
+            // 收集 CF 节点名称
+            if (inProxies) {
+                let name = null;
                 // Block Style
-                if (trimmedLine.startsWith('- name:')) {
-                    nodeName = trimmedLine.match(/- name:\s*["']?([^"'\n]+)["']?/)?.[1];
+                if (trimmed.startsWith('- name:')) {
+                    name = trimmed.match(/- name:\s*["']?([^"'\n]+)["']?/)?.[1];
                 }
                 // Flow Style
-                else if (trimmedLine.startsWith('- {') && trimmedLine.includes('name:')) {
-                    nodeName = trimmedLine.match(/name:\s*["']?([^,"'}]+)["']?/)?.[1];
+                else if (trimmed.startsWith('- {') && trimmed.includes('name:')) {
+                    const match = trimmed.match(/name:\s*["']?([^,"'}]+)["']?/);
+                    if (match) name = match[1];
                 }
-
-                if (nodeName) {
-                    isTransitNode = 中转节点列表.some(n => n.name === nodeName) || nodeName === '🛫 链式中转';
-                    
-                    if (!isTransitNode) {
-                        // 创建副本
-                        const clonedName = `🔗 ${nodeName}`;
-                        clonedNodeNames.push(clonedName);
-                        
-                        if (trimmedLine.startsWith('- name:')) {
-                            // Block Style Clone
-                            clonedNodeLines.push(line.replace(nodeName, clonedName));
-                            // 复制该节点剩余行并查找结束
-                            let j = i + 1;
-                            while (j < lines.length) {
-                                const nextLine = lines[j];
-                                const nextTrimmed = nextLine.trim();
-                                if ((!nextLine.startsWith(' ') && nextLine.includes(':')) || nextTrimmed.startsWith('- ')) break;
-                                clonedNodeLines.push(nextLine);
-                                j++;
-                            }
-                            // 为副本添加 dialer-proxy
-                            clonedNodeLines.push(`    dialer-proxy: "🛫 链式中转"`);
-                        } else {
-                            // Flow Style Clone
-                            // 在 } 前插入 dialer-proxy，并修改 name
-                            const lastBraceIndex = line.lastIndexOf('}');
-                            if (lastBraceIndex > -1) {
-                                let modifiedLine = line.replace(nodeName, clonedName);
-                                modifiedLine = modifiedLine.substring(0, modifiedLine.lastIndexOf('}')) + `, dialer-proxy: "🛫 链式中转"}` + modifiedLine.substring(modifiedLine.lastIndexOf('}') + 1);
-                                clonedNodeLines.push(modifiedLine);
-                            }
-                        }
-                    }
+                
+                // 排除用户节点（如果是重复运行或 update）
+                if (name && !userNodes.some(n => n.name === name)) {
+                    cfNodeNames.push(name);
                 }
             }
 
-            // 处理 proxy-groups 段落：将“🔗 链式模式”加入主选择组
-            if (inProxyGroupsSection) {
-                if (trimmedLine.startsWith('- name:')) {
-                    const groupName = trimmedLine.match(/- name:\s*["']?([^"'\n]+)["']?/)?.[1];
-                    // 假设“🚀 节点选择”或“Proxy”是主组，或者是第一个 select 组
-                    // 这里我们匹配常见的“节点选择”或“Proxy”
-                    if (groupName && (groupName.includes('节点选择') || groupName === 'Proxy' || groupName.includes('🚀'))) {
-                        inMainSelectGroup = true;
-                    } else {
-                        inMainSelectGroup = false;
-                    }
-                }
-                
-                // 如果在主选择组的 proxies 列表中，插入“🔗 链式模式”
-                if (inMainSelectGroup && trimmedLine === 'proxies:') {
-                    newLines.push(line);
-                    // 插入链式模式选项
-                    const indent = line.match(/^(\s*)/)?.[1] || '    '; // 默认4空格
-                    newLines.push(`${indent}  - "🔗 链式模式"`);
-                    continue;
+            // 修改主策略组
+            if (inGroups && trimmed.startsWith('- name:')) {
+                const groupName = trimmed.match(/- name:\s*["']?([^"'\n]+)["']?/)?.[1];
+                // 识别主节点选择组
+                if (groupName && (groupName.includes('节点选择') || groupName === 'Proxy' || groupName.includes('🚀'))) {
+                    mainGroupModified = true; // 标记正在修改主组
+                } else {
+                    mainGroupModified = false;
                 }
             }
             
+            // 向主策略组注入“🔗 链式模式”选项
+            if (inGroups && mainGroupModified && trimmed === 'proxies:') {
+                newLines.push(line);
+                // 插入选项
+                const indent = line.match(/^(\s*)/)?.[1] || '    ';
+                newLines.push(`${indent}  - "🔗 链式模式"`);
+                continue;
+            }
+
             newLines.push(line);
+        }
+        
+        // 如果文件结束还没注入新组（防止没有 rules 段落的情况）
+        if (!customGroupsInjected && userNodes.length > 0) {
+             newLines.push(...generateNewGroups(userNodes, cfNodeNames));
         }
         
         return newLines.join('\n');

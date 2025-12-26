@@ -453,7 +453,10 @@ export default {
 
                 return new Response(originalText.replace('</body>', chainProxyScript + '</body>'), {
                     status: 200,
-                    headers: { 'Content-Type': 'text/html; charset=utf-8' }
+                    headers: {
+                        'Content-Type': 'text/html; charset=utf-8',
+                        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https:; frame-src 'self'"
+                    }
                 });
             } else if (访问路径 === 'logout') {//清除cookie并跳转到登录页面
                 const 响应 = new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });

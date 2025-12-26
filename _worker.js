@@ -172,6 +172,16 @@ export default {
                             console.error('保存自定义IP失败:', error);
                             return new Response(JSON.stringify({ error: '保存自定义IP失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         }
+                    } else if (区分大小写访问路径 === 'admin/admin.html') { // 上传自托管的管理页面
+                        try {
+                            const adminHtml = await request.text();
+                            await env.KV.put('admin.html', adminHtml);
+                            ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Upload_Admin_Page', config_JSON));
+                            return new Response(JSON.stringify({ success: true, message: '管理页面已上传到KV' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        } catch (error) {
+                            console.error('上传管理页面失败:', error);
+                            return new Response(JSON.stringify({ error: '上传管理页面失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        }
                     } else if (访问路径 === 'admin/chain-proxy.json') { // 保存链式代理配置
                         try {
                             const chainProxyConfig = await request.json();
@@ -249,8 +259,13 @@ export default {
                 }
 
                 ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));
-                const originalResponse = await fetch(Pages静态页面 + '/admin');
-                let originalText = await originalResponse.text();
+
+                // 优先从 KV 读取自托管的 admin.html，如果没有则从外部 Pages 获取
+                let originalText = await env.KV.get('admin.html');
+                if (!originalText) {
+                    const originalResponse = await fetch(Pages静态页面 + '/admin');
+                    originalText = await originalResponse.text();
+                }
 
                 // 解决前端优选功能 CORS 问题：替换请求 URL 为 Worker 代理路径
                 originalText = originalText.replace(/https:\/\/cf\.090227\.xyz/g, '/admin/proxy/cf');

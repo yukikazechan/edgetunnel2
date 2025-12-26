@@ -263,7 +263,7 @@ export default {
                 // 优先从 KV 读取自托管的 admin.html，如果没有则从外部 Pages 获取
                 let originalText = await env.KV.get('admin.html');
                 if (!originalText) {
-                    const originalResponse = await fetch(Pages静态页面 + '/admin');
+                    const originalResponse = await fetch(Pages静态页面 + '/');
                     originalText = await originalResponse.text();
                 }
 

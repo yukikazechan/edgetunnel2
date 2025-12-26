@@ -1516,6 +1516,13 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
     //const host = 随机替换通配符(hostname);
     const host = hostname;
     const 初始化开始时间 = performance.now();
+    const 管理员密码 = env.ADMIN || env.admin || env.PASSWORD || env.password || env.pswd || env.TOKEN || env.KEY || env.UUID || env.uuid;
+    const 加密秘钥 = env.KEY || '勿动此默认密钥，有需求请自行通过添加变量KEY进行修改';
+    const userIDMD5 = await MD5MD5(管理员密码 + 加密秘钥);
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+    const envUUID = env.UUID || env.uuid;
+    const AdminUUID = (envUUID && uuidRegex.test(envUUID)) ? envUUID.toLowerCase() : [userIDMD5.slice(0, 8), userIDMD5.slice(8, 12), '4' + userIDMD5.slice(13, 16), '8' + userIDMD5.slice(17, 20), userIDMD5.slice(20)].join('-');
+
     const 默认配置JSON = {
         TIME: new Date().toISOString(),
         HOST: host,
@@ -1602,7 +1609,7 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
         // 所以我们检查 userID 是否等于 env.UUID (如果有的话)
 
         let configKey = 'config.json';
-        if (env.UUID && userID !== env.UUID && userID !== '00000000-0000-4000-8000-000000000000') {
+        if (userID !== AdminUUID && userID !== '00000000-0000-4000-8000-000000000000') {
             configKey = `config_${userID}.json`;
         }
 
@@ -1631,7 +1638,7 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
     config_JSON.TG = { 启用: config_JSON.TG.启用 ? config_JSON.TG.启用 : false, ...初始化TG_JSON };
     try {
         let tgKey = 'tg.json';
-        if (env.UUID && userID !== env.UUID && userID !== '00000000-0000-4000-8000-000000000000') {
+        if (userID !== AdminUUID && userID !== '00000000-0000-4000-8000-000000000000') {
             tgKey = `tg_${userID}.json`;
         }
         const TG_TXT = await env.KV.get(tgKey);
@@ -1650,7 +1657,7 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
     config_JSON.CF = { ...初始化CF_JSON, Usage: { success: false, pages: 0, workers: 0, total: 0 } };
     try {
         let cfKey = 'cf.json';
-        if (env.UUID && userID !== env.UUID && userID !== '00000000-0000-4000-8000-000000000000') {
+        if (userID !== AdminUUID && userID !== '00000000-0000-4000-8000-000000000000') {
             cfKey = `cf_${userID}.json`;
         }
         const CF_TXT = await env.KV.get(cfKey);
@@ -1674,7 +1681,7 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
     config_JSON.链式代理 = config_JSON.链式代理 || 初始化链式代理配置;
     try {
         let chainKey = 'chain-proxy.json';
-        if (env.UUID && userID !== env.UUID && userID !== '00000000-0000-4000-8000-000000000000') {
+        if (userID !== AdminUUID && userID !== '00000000-0000-4000-8000-000000000000') {
             chainKey = `chain-proxy_${userID}.json`;
         }
         const chainProxyTxt = await env.KV.get(chainKey);

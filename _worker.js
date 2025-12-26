@@ -110,30 +110,13 @@ export default {
                 }
                 return fetch(Pages静态页面 + '/login');
             } else if (访问路径 === 'api/ip' || 访问路径 === 'admin/api/ip') { // API/IP 接口 (获取真实出口IP)
-            } else if (访问路径 === 'api/ip' || 访问路径 === 'admin/api/ip') { // API/IP 接口 (获取真实出口IP)
-                let ip = '未知';
-                let country = request.cf?.country || '未知';
-                let org = request.cf?.asOrganization || '未知';
-
-                try {
-                    // 尝试获取真实的 Worker 出口 IP
-                    const response = await fetch('https://api.ipify.org?format=json');
-                    if (response.ok) {
-                        const data = await response.json();
-                        ip = data.ip;
-                    } else {
-                        throw new Error('IP API failed');
-                    }
-                } catch (e) {
-                    // 失败降级：使用连接 IP
-                    ip = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip');
-                }
-
+            } else if (访问路径 === 'api/ip' || 访问路径 === 'admin/api/ip') { // API/IP 接口
+                const ip = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for') || '未知';
                 return new Response(JSON.stringify({
                     ip: ip,
-                    country: country,
-                    org: org,
-                    asOrganization: org
+                    country: request.cf?.country || '未知',
+                    org: request.cf?.asOrganization || '未知',
+                    asOrganization: request.cf?.asOrganization || '未知'
                 }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
             } else if (访问路径 === 'admin' || 访问路径.startsWith('admin/')) {//验证cookie后响应管理页面
                 const cookies = request.headers.get('Cookie') || '';

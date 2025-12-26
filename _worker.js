@@ -24,17 +24,55 @@ export default {
         } else 反代IP = (request.cf.colo + '.PrOxYIp.CmLiUsSsS.nEt').toLowerCase();
         const 访问IP = request.headers.get('X-Real-IP') || request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || request.headers.get('True-Client-IP') || request.headers.get('Fly-Client-IP') || request.headers.get('X-Appengine-Remote-Addr') || request.headers.get('X-Forwarded-For') || request.headers.get('X-Real-IP') || request.headers.get('X-Cluster-Client-IP') || request.cf?.clientTcpRtt || '未知IP';
         if (env.GO2SOCKS5) SOCKS5白名单 = await 整理成数组(env.GO2SOCKS5);
+
+        // 用户隔离逻辑：检测 UUID 路径前缀 (提早执行以支持WebSocket)
+        let effectivePath = url.pathname.slice(1);
+        let targetUUID = userID; // 默认为全局 Admin UUID
+        let isIsolated = false;
+
+        // 尝试匹配 /{uuid}/... 或 /{uuid}
+        const pathParts = effectivePath.split('/');
+        const potentialUUID = pathParts[0];
+        if (uuidRegex.test(potentialUUID)) {
+            // 如果是 WebSocket，允许直接使用 /{uuid} 路径连接
+            if (upgradeHeader === 'websocket') {
+                targetUUID = potentialUUID;
+                isIsolated = true;
+                effectivePath = effectivePath.substring(potentialUUID.length + 1);
+            } else if (pathParts.length === 1 && (UA.toLowerCase().includes('mozilla') || UA.toLowerCase().includes('chrome'))) {
+                // 如果是浏览器访问 /{uuid}，重定向到 /{uuid}/admin
+                return Response.redirect(`${url.origin}/${potentialUUID}/admin`, 302);
+            } else if (pathParts.length > 1) {
+                // 如果路径包含子路径 (如 admin, api, sub 等)，视为隔离访问
+                targetUUID = potentialUUID;
+                isIsolated = true;
+                effectivePath = effectivePath.substring(potentialUUID.length + 1);
+            } else {
+                // 路径仅包含 UUID 且非浏览器访问 (订阅请求)
+                targetUUID = potentialUUID;
+                isIsolated = true;
+            }
+        }
+
         if (!upgradeHeader || upgradeHeader !== 'websocket') {
             if (url.protocol === 'http:') return Response.redirect(url.href.replace(`http://${url.hostname}`, `https://${url.hostname}`), 301);
-            if (!管理员密码) return fetch(Pages静态页面 + '/noADMIN').then(r => { const headers = new Headers(r.headers); headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate'); headers.set('Pragma', 'no-cache'); headers.set('Expires', '0'); return new Response(r.body, { status: 404, statusText: r.statusText, headers }); });
+
+
+
+            if (!管理员密码 && !isIsolated) return fetch(Pages静态页面 + '/noADMIN').then(r => { const headers = new Headers(r.headers); headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate'); headers.set('Pragma', 'no-cache'); headers.set('Expires', '0'); return new Response(r.body, { status: 404, statusText: r.statusText, headers }); });
             if (!env.KV) return fetch(Pages静态页面 + '/noKV').then(r => { const headers = new Headers(r.headers); headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate'); headers.set('Pragma', 'no-cache'); headers.set('Expires', '0'); return new Response(r.body, { status: 404, statusText: r.statusText, headers }); });
-            const 访问路径 = url.pathname.slice(1).toLowerCase();
-            const 区分大小写访问路径 = url.pathname.slice(1);
-            if (访问路径 === 加密秘钥 && 加密秘钥 !== '勿动此默认密钥，有需求请自行通过添加变量KEY进行修改') {//快速订阅
+
+            const 访问路径 = effectivePath.toLowerCase();
+            const 区分大小写访问路径 = effectivePath;
+
+            if ((访问路径 === 加密秘钥 && 加密秘钥 !== '勿动此默认密钥，有需求请自行通过添加变量KEY进行修改') || 访问路径 === targetUUID) {//快速订阅
                 const params = new URLSearchParams(url.search);
-                params.set('token', await MD5MD5(host + userID));
-                return new Response('重定向中...', { status: 302, headers: { 'Location': `/sub?${params.toString()}` } });
+                params.set('token', await MD5MD5(host + targetUUID));
+                return new Response('重定向中...', { status: 302, headers: { 'Location': `/${targetUUID}/sub?${params.toString()}` } });
             } else if (访问路径 === 'login') {//处理登录页面和登录请求
+                // 如果是隔离模式，跳转到 Dash
+                if (isIsolated) return new Response('重定向中...', { status: 302, headers: { 'Location': `/${targetUUID}/admin` } });
+
                 const cookies = request.headers.get('Cookie') || '';
                 const authCookie = cookies.split(';').find(c => c.trim().startsWith('auth='))?.split('=')[1];
                 if (authCookie == await MD5MD5(UA + 加密秘钥 + 管理员密码)) return new Response('重定向中...', { status: 302, headers: { 'Location': '/admin' } });
@@ -53,9 +91,12 @@ export default {
             } else if (访问路径 === 'admin' || 访问路径.startsWith('admin/')) {//验证cookie后响应管理页面
                 const cookies = request.headers.get('Cookie') || '';
                 const authCookie = cookies.split(';').find(c => c.trim().startsWith('auth='))?.split('=')[1];
-                // 没有cookie或cookie错误，跳转到/login页面
-                if (!authCookie || authCookie !== await MD5MD5(UA + 加密秘钥 + 管理员密码)) return new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
+                // 没有cookie或cookie错误，跳转到/login页面，除非是隔离模式
+                if (!isIsolated && (!authCookie || authCookie !== await MD5MD5(UA + 加密秘钥 + 管理员密码))) return new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
+
                 if (访问路径 === 'admin/log.json') {// 读取日志内容
+                    // 隔离用户暂不支持查看日志，或者查看独立日志？暂且使用全局日志或屏蔽
+                    // 如果要隔离日志，需要修改 Log key。暂时保持全局
                     const 读取日志内容 = await env.KV.get('log.json') || '[]';
                     return new Response(读取日志内容, { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                 } else if (区分大小写访问路径 === 'admin/getCloudflareUsage') {// 查询请求量
@@ -91,11 +132,11 @@ export default {
                     return new Response(JSON.stringify(检测代理响应, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                 }
 
-                config_JSON = await 读取config_JSON(env, host, userID, env.PATH);
+                config_JSON = await 读取config_JSON(env, host, targetUUID, env.PATH);
 
                 if (访问路径 === 'admin/init') {// 重置配置为默认值
                     try {
-                        config_JSON = await 读取config_JSON(env, host, userID, env.PATH, true);
+                        config_JSON = await 读取config_JSON(env, host, targetUUID, env.PATH, true);
                         ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Init_Config', config_JSON));
                         config_JSON.init = '配置已重置为默认值';
                         return new Response(JSON.stringify(config_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
@@ -110,8 +151,9 @@ export default {
                             // 验证配置完整性
                             if (!newConfig.UUID || !newConfig.HOST) return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 
-                            // 保存到 KV
-                            await env.KV.put('config.json', JSON.stringify(newConfig, null, 2));
+                            // 保存到 KV (区分用户)
+                            const saveKey = targetUUID === userID ? 'config.json' : `config_${targetUUID}.json`;
+                            await env.KV.put(saveKey, JSON.stringify(newConfig, null, 2));
                             ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON));
                             return new Response(JSON.stringify({ success: true, message: '配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         } catch (error) {
@@ -139,7 +181,8 @@ export default {
                             }
 
                             // 保存到 KV
-                            await env.KV.put('cf.json', JSON.stringify(CF_JSON, null, 2));
+                            const saveKey = targetUUID === userID ? 'cf.json' : `cf_${targetUUID}.json`;
+                            await env.KV.put(saveKey, JSON.stringify(CF_JSON, null, 2));
                             ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON));
                             return new Response(JSON.stringify({ success: true, message: '配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         } catch (error) {
@@ -149,12 +192,13 @@ export default {
                     } else if (访问路径 === 'admin/tg.json') { // 保存tg.json配置
                         try {
                             const newConfig = await request.json();
+                            const saveKey = targetUUID === userID ? 'tg.json' : `tg_${targetUUID}.json`;
                             if (newConfig.init && newConfig.init === true) {
                                 const TG_JSON = { BotToken: null, ChatID: null };
-                                await env.KV.put('tg.json', JSON.stringify(TG_JSON, null, 2));
+                                await env.KV.put(saveKey, JSON.stringify(TG_JSON, null, 2));
                             } else {
                                 if (!newConfig.BotToken || !newConfig.ChatID) return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
-                                await env.KV.put('tg.json', JSON.stringify(newConfig, null, 2));
+                                await env.KV.put(saveKey, JSON.stringify(newConfig, null, 2));
                             }
                             ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON));
                             return new Response(JSON.stringify({ success: true, message: '配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
@@ -165,7 +209,8 @@ export default {
                     } else if (区分大小写访问路径 === 'admin/ADD.txt') { // 保存自定义优选IP
                         try {
                             const customIPs = await request.text();
-                            await env.KV.put('ADD.txt', customIPs);// 保存到 KV
+                            const saveKey = targetUUID === userID ? 'ADD.txt' : `ADD_${targetUUID}.txt`;
+                            await env.KV.put(saveKey, customIPs);// 保存到 KV
                             ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Custom_IPs', config_JSON));
                             return new Response(JSON.stringify({ success: true, message: '自定义IP已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         } catch (error) {
@@ -175,6 +220,8 @@ export default {
                     } else if (区分大小写访问路径 === 'admin/admin.html') { // 上传自托管的管理页面
                         try {
                             const adminHtml = await request.text();
+                            // Admin HTML 保持全局，或者也隔离？
+                            // 保持全局比较好，通常只需一个 UI。
                             await env.KV.put('admin.html', adminHtml);
                             ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Upload_Admin_Page', config_JSON));
                             return new Response(JSON.stringify({ success: true, message: '管理页面已上传到KV' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
@@ -204,7 +251,8 @@ export default {
                                 }
                             }
                             // 保存到 KV
-                            await env.KV.put('chain-proxy.json', JSON.stringify(chainProxyConfig, null, 2));
+                            const saveKey = targetUUID === userID ? 'chain-proxy.json' : `chain-proxy_${targetUUID}.json`;
+                            await env.KV.put(saveKey, JSON.stringify(chainProxyConfig, null, 2));
                             ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Chain_Proxy', config_JSON));
                             return new Response(JSON.stringify({ success: true, message: '链式代理配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         } catch (error) {
@@ -215,7 +263,8 @@ export default {
                 } else if (访问路径 === 'admin/config.json') {// 处理 admin/config.json 请求，返回JSON
                     return new Response(JSON.stringify(config_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
                 } else if (区分大小写访问路径 === 'admin/ADD.txt') {// 处理 admin/ADD.txt 请求，返回本地优选IP
-                    let 本地优选IP = await env.KV.get('ADD.txt') || 'null';
+                    const loadKey = targetUUID === userID ? 'ADD.txt' : `ADD_${targetUUID}.txt`;
+                    let 本地优选IP = await env.KV.get(loadKey) || 'null';
                     if (本地优选IP == 'null') 本地优选IP = (await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口))[1];
                     return new Response(本地优选IP, { status: 200, headers: { 'Content-Type': 'text/plain;charset=utf-8', 'asn': request.cf.asn } });
                 } else if (访问路径 === 'admin/cf.json') {// CF配置文件
@@ -460,9 +509,9 @@ export default {
                 响应.headers.set('Set-Cookie', 'auth=; Path=/; Max-Age=0; HttpOnly');
                 return 响应;
             } else if (访问路径 === 'sub') {//处理订阅请求
-                const 订阅TOKEN = await MD5MD5(host + userID);
+                const 订阅TOKEN = await MD5MD5(host + targetUUID);
                 if (url.searchParams.get('token') === 订阅TOKEN) {
-                    config_JSON = await 读取config_JSON(env, host, userID, env.PATH);
+                    config_JSON = await 读取config_JSON(env, host, targetUUID, env.PATH);
                     ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Get_SUB', config_JSON));
                     const ua = UA.toLowerCase();
                     const expire = 4102329600;//2099-12-31 到期时间
@@ -500,7 +549,8 @@ export default {
                     const 协议类型 = (url.searchParams.has('surge') || ua.includes('surge')) ? 'tro' + 'jan' : config_JSON.协议类型;
                     let 订阅内容 = '';
                     if (订阅类型 === 'mixed') {
-                        const 节点路径 = config_JSON.启用0RTT ? config_JSON.PATH + '?ed=2560' : config_JSON.PATH;
+                        const 基础路径 = config_JSON.启用0RTT ? config_JSON.PATH + '?ed=2560' : config_JSON.PATH;
+                        const 节点路径 = isIsolated ? `/${targetUUID}${基础路径}` : 基础路径;
                         const TLS分片参数 = config_JSON.TLS分片 == 'Shadowrocket' ? `&fragment=${encodeURIComponent('1,40-60,30-50,tlshello')}` : config_JSON.TLS分片 == 'Happ' ? `&fragment=${encodeURIComponent('3,1,tlshello')}` : '';
                         let 完整优选IP = [], 其他节点LINK = '';
 
@@ -614,7 +664,7 @@ export default {
             }
         } else if (管理员密码) {// ws代理
             await 反代参数获取(request);
-            return await 处理WS请求(request, userID);
+            return await 处理WS请求(request, targetUUID);
         }
 
         let 伪装页URL = env.URL || 'nginx';
@@ -1469,9 +1519,28 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
     };
 
     try {
-        let configJSON = await env.KV.get('config.json');
+        // 区分用户配置
+        // 需要判断 userID 是否等于全局 Admin UUID? 
+        // 但读取config_JSON时通常传入的是 targetUUID。
+        // 我们需要一个基准 UUID 来比较吗？
+        // 简单起见，如果 userID 是全局 Admin (通常是 env.UUID), 用 config.json
+        // 否则 config_UUID.json
+        // 但 env.UUID 和 userID 一样吗？
+        // env.UUID 可能是未定义的，或者从 env.UUID 获取。
+        // 让我们假设如果 userID 与当前运行环境的"主" userID 不同，则隔离。
+        // 但这里我们没有"主" userID 的直接访问 (除了 env.UUID).
+        // 更好的方式：如果路径中有明确的 targetUUID，则使用该 UUID 作为 Key 后缀。
+        // 现有的逻辑已经传入了 targetUUID 作为 userID 参数。
+        // 所以我们检查 userID 是否等于 env.UUID (如果有的话)
+
+        let configKey = 'config.json';
+        if (env.UUID && userID !== env.UUID && userID !== '00000000-0000-4000-8000-000000000000') {
+            configKey = `config_${userID}.json`;
+        }
+
+        let configJSON = await env.KV.get(configKey);
         if (!configJSON || 重置配置 == true) {
-            await env.KV.put('config.json', JSON.stringify(默认配置JSON, null, 2));
+            await env.KV.put(configKey, JSON.stringify(默认配置JSON, null, 2));
             config_JSON = 默认配置JSON;
         } else {
             config_JSON = JSON.parse(configJSON);
@@ -1493,9 +1562,13 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
     const 初始化TG_JSON = { BotToken: null, ChatID: null };
     config_JSON.TG = { 启用: config_JSON.TG.启用 ? config_JSON.TG.启用 : false, ...初始化TG_JSON };
     try {
-        const TG_TXT = await env.KV.get('tg.json');
+        let tgKey = 'tg.json';
+        if (env.UUID && userID !== env.UUID && userID !== '00000000-0000-4000-8000-000000000000') {
+            tgKey = `tg_${userID}.json`;
+        }
+        const TG_TXT = await env.KV.get(tgKey);
         if (!TG_TXT) {
-            await env.KV.put('tg.json', JSON.stringify(初始化TG_JSON, null, 2));
+            await env.KV.put(tgKey, JSON.stringify(初始化TG_JSON, null, 2));
         } else {
             const TG_JSON = JSON.parse(TG_TXT);
             config_JSON.TG.ChatID = TG_JSON.ChatID ? TG_JSON.ChatID : null;
@@ -1508,9 +1581,13 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
     const 初始化CF_JSON = { Email: null, GlobalAPIKey: null, AccountID: null, APIToken: null };
     config_JSON.CF = { ...初始化CF_JSON, Usage: { success: false, pages: 0, workers: 0, total: 0 } };
     try {
-        const CF_TXT = await env.KV.get('cf.json');
+        let cfKey = 'cf.json';
+        if (env.UUID && userID !== env.UUID && userID !== '00000000-0000-4000-8000-000000000000') {
+            cfKey = `cf_${userID}.json`;
+        }
+        const CF_TXT = await env.KV.get(cfKey);
         if (!CF_TXT) {
-            await env.KV.put('cf.json', JSON.stringify(初始化CF_JSON, null, 2));
+            await env.KV.put(cfKey, JSON.stringify(初始化CF_JSON, null, 2));
         } else {
             const CF_JSON = JSON.parse(CF_TXT);
             config_JSON.CF.Email = CF_JSON.Email ? CF_JSON.Email : null;
@@ -1528,7 +1605,11 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
     const 初始化链式代理配置 = { 启用: false, 当前选择: null, 中转节点列表: [] };
     config_JSON.链式代理 = config_JSON.链式代理 || 初始化链式代理配置;
     try {
-        const chainProxyTxt = await env.KV.get('chain-proxy.json');
+        let chainKey = 'chain-proxy.json';
+        if (env.UUID && userID !== env.UUID && userID !== '00000000-0000-4000-8000-000000000000') {
+            chainKey = `chain-proxy_${userID}.json`;
+        }
+        const chainProxyTxt = await env.KV.get(chainKey);
         if (chainProxyTxt) {
             const chainProxyJSON = JSON.parse(chainProxyTxt);
             config_JSON.链式代理 = {

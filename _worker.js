@@ -81,7 +81,7 @@ export default {
 
                 const cookies = request.headers.get('Cookie') || '';
                 const authCookie = cookies.split(';').find(c => c.trim().startsWith('auth='))?.split('=')[1];
-                if (authCookie == await MD5MD5(UA + 加密秘钥 + 管理员密码)) return new Response('重定向中...', { status: 302, headers: { 'Location': '/admin' } });
+                if (authCookie == await MD5MD5(加密秘钥 + 管理员密码)) return new Response('重定向中...', { status: 302, headers: { 'Location': '/admin' } });
                 if (request.method === 'POST') {
                     const formData = await request.text();
                     const params = new URLSearchParams(formData);
@@ -92,7 +92,7 @@ export default {
                     if (输入密码 === 管理员密码 && (!输入用户名 || 输入用户名.toLowerCase() === 'admin')) {
                         // 密码正确，设置cookie并返回成功标记
                         const 响应 = new Response(JSON.stringify({ success: true, role: 'admin' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
-                        响应.headers.set('Set-Cookie', `auth=${await MD5MD5(UA + 加密秘钥 + 管理员密码)}; Path=/; Max-Age=86400; HttpOnly`);
+                        响应.headers.set('Set-Cookie', `auth=${await MD5MD5(加密秘钥 + 管理员密码)}; Path=/; Max-Age=86400; HttpOnly`);
                         return 响应;
                     }
 
@@ -120,7 +120,7 @@ export default {
                 const cookies = request.headers.get('Cookie') || '';
                 const authCookie = cookies.split(';').find(c => c.trim().startsWith('auth='))?.split('=')[1];
                 // 没有cookie或cookie错误，跳转到/login页面，除非是隔离模式
-                if (!isIsolated && (!authCookie || authCookie !== await MD5MD5(UA + 加密秘钥 + 管理员密码))) return new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
+                if (!isIsolated && (!authCookie || authCookie !== await MD5MD5(加密秘钥 + 管理员密码))) return new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
 
                 if (访问路径 === 'admin/log.json') {// 读取日志内容
                     // 隔离用户暂不支持查看日志，或者查看独立日志？暂且使用全局日志或屏蔽
@@ -719,7 +719,7 @@ export default {
             } else if (访问路径 === 'locations') {//反代locations列表
                 const cookies = request.headers.get('Cookie') || '';
                 const authCookie = cookies.split(';').find(c => c.trim().startsWith('auth='))?.split('=')[1];
-                if (authCookie && authCookie == await MD5MD5(UA + 加密秘钥 + 管理员密码)) return fetch(new Request('https://speed.cloudflare.com/locations', { headers: { 'Referer': 'https://speed.cloudflare.com/' } }));
+                if (authCookie && authCookie == await MD5MD5(加密秘钥 + 管理员密码)) return fetch(new Request('https://speed.cloudflare.com/locations', { headers: { 'Referer': 'https://speed.cloudflare.com/' } }));
             }
         } else if (管理员密码) {// ws代理
             await 反代参数获取(request);

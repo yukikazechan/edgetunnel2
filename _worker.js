@@ -54,6 +54,12 @@ export default {
             }
         }
 
+        // 强制 Admin 路径末尾加斜杠 (解决相对路径问题)
+        // 匹配 /admin 或 /{uuid}/admin 且没有结尾斜杠的情况
+        if ((effectivePath === 'admin' || effectivePath.endsWith('/admin')) && !url.pathname.endsWith('/')) {
+            return Response.redirect(`${url.href}/`, 301);
+        }
+
         if (!upgradeHeader || upgradeHeader !== 'websocket') {
             if (url.protocol === 'http:') return Response.redirect(url.href.replace(`http://${url.hostname}`, `https://${url.hostname}`), 301);
 
@@ -80,11 +86,26 @@ export default {
                     const formData = await request.text();
                     const params = new URLSearchParams(formData);
                     const 输入密码 = params.get('password');
-                    if (输入密码 === 管理员密码) {
+                    const 输入用户名 = params.get('username');
+
+                    // 1. 验证全局管理员 (允许用户名为空或为 admin)
+                    if (输入密码 === 管理员密码 && (!输入用户名 || 输入用户名.toLowerCase() === 'admin')) {
                         // 密码正确，设置cookie并返回成功标记
-                        const 响应 = new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        const 响应 = new Response(JSON.stringify({ success: true, role: 'admin' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         响应.headers.set('Set-Cookie', `auth=${await MD5MD5(UA + 加密秘钥 + 管理员密码)}; Path=/; Max-Age=86400; HttpOnly`);
                         return 响应;
+                    }
+
+                    // 2. 验证普通用户
+                    try {
+                        const usersList = JSON.parse(await env.KV.get('users.json') || '[]');
+                        const user = usersList.find(u => u.username === 输入用户名 && u.password === 输入密码);
+                        if (user) {
+                            // 普通用户登录成功，前端负责跳转到 /{uuid}/admin
+                            return new Response(JSON.stringify({ success: true, role: 'user', uuid: user.uuid }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        }
+                    } catch (e) {
+                        console.error('用户验证错误', e);
                     }
                 }
                 return fetch(Pages静态页面 + '/login');
@@ -258,6 +279,34 @@ export default {
                         } catch (error) {
                             console.error('保存链式代理配置失败:', error);
                             return new Response(JSON.stringify({ error: '保存链式代理配置失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        }
+                    } else if (访问路径 === 'admin/api/users/list') { // 获取用户列表
+                        const users = await env.KV.get('users.json') || '[]';
+                        return new Response(users, { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                    } else if (访问路径 === 'admin/api/users/add') { // 添加/更新用户
+                        try {
+                            const newUser = await request.json();
+                            if (!newUser.username || !newUser.password || !newUser.uuid) {
+                                return new Response(JSON.stringify({ error: '字段不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                            }
+                            let users = JSON.parse(await env.KV.get('users.json') || '[]');
+                            const index = users.findIndex(u => u.username === newUser.username);
+                            if (index !== -1) users[index] = newUser; // 更新
+                            else users.push(newUser); // 新增
+                            await env.KV.put('users.json', JSON.stringify(users));
+                            return new Response(JSON.stringify({ success: true, message: '用户已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        } catch (e) {
+                            return new Response(JSON.stringify({ error: '操作失败: ' + e.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        }
+                    } else if (访问路径 === 'admin/api/users/delete') { // 删除用户
+                        try {
+                            const { username } = await request.json();
+                            let users = JSON.parse(await env.KV.get('users.json') || '[]');
+                            users = users.filter(u => u.username !== username);
+                            await env.KV.put('users.json', JSON.stringify(users));
+                            return new Response(JSON.stringify({ success: true, message: '用户已删除' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        } catch (e) {
+                            return new Response(JSON.stringify({ error: '删除失败: ' + e.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         }
                     } else return new Response(JSON.stringify({ error: '不支持的POST请求路径' }), { status: 404, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                 } else if (访问路径 === 'admin/config.json') {// 处理 admin/config.json 请求，返回JSON

@@ -109,13 +109,24 @@ export default {
                     }
                 }
                 return fetch(Pages静态页面 + '/login');
-            } else if (访问路径 === 'api/ip' || 访问路径 === 'admin/api/ip') { // API/IP 接口 (允许 GET)
-                return new Response(JSON.stringify({
-                    ip: request.headers.get('cf-connecting-ip'),
-                    country: request.cf.country,
-                    org: request.cf.asOrganization,
-                    asOrganization: request.cf.asOrganization
-                }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+            } else if (访问路径 === 'api/ip' || 访问路径 === 'admin/api/ip') { // API/IP 接口 (获取真实出口IP)
+                try {
+                    const response = await fetch('https://speed.cloudflare.com/meta');
+                    const data = await response.json();
+                    return new Response(JSON.stringify({
+                        ip: data.clientIp,
+                        country: data.country,
+                        org: data.asOrganization,
+                        asOrganization: data.asOrganization
+                    }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                } catch (e) {
+                    return new Response(JSON.stringify({
+                        ip: request.headers.get('cf-connecting-ip'), // 降级回显
+                        country: request.cf.country,
+                        org: request.cf.asOrganization,
+                        asOrganization: request.cf.asOrganization
+                    }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                }
             } else if (访问路径 === 'admin' || 访问路径.startsWith('admin/')) {//验证cookie后响应管理页面
                 const cookies = request.headers.get('Cookie') || '';
                 const authCookie = cookies.split(';').find(c => c.trim().startsWith('auth='))?.split('=')[1];
@@ -523,7 +534,7 @@ export default {
                                 btn.textContent = '保存中...';
                                 btn.disabled = true;
                                 
-                                const saveRes = await fetch('/admin/chain-proxy.json', {
+                                const saveRes = await fetch('chain-proxy.json', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(config)

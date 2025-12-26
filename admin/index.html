@@ -8919,6 +8919,10 @@ vless://7b102311-43fd-4e8f-977e-8090623c101d@edt-pages.github.io:443?security=tl
                 console.log(`[在线优选] 结果: ${country}=${optimizeResults[country].length} 个 IP`);
                 // 不再限制为16个，保留所有结果
             }
+
+            // 暴露到全局变量供增强功能使用
+            window.optimizeResults = optimizeResults;
+            window.currentSelectedCountry = null;
         }
 
         // 显示结果
@@ -8970,6 +8974,7 @@ vless://7b102311-43fd-4e8f-977e-8090623c101d@edt-pages.github.io:443?security=tl
         // 选择国家选项卡
         function selectCountryTab(country) {
             currentSelectedCountry = country;
+            window.currentSelectedCountry = country;
 
             // 更新选项卡样式
             const tabs = document.querySelectorAll('.optimize-tab');

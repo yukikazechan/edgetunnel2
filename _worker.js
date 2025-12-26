@@ -2,7 +2,7 @@
 let config_JSON, 反代IP = '', 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {};
 let 缓存反代IP, 缓存反代解析数组, 缓存反代数组索引 = 0, 启用反代兜底 = true;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
-const Pages静态页面 = 'https://edt-pages.github.io';
+const Pages静态页面 = 'https://yukikazechan.github.io/edgetunnel2';
 ///////////////////////////////////////////////////////主程序入口///////////////////////////////////////////////
 export default {
     async fetch(request, env, ctx) {
@@ -251,7 +251,7 @@ export default {
                 ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));
                 const originalResponse = await fetch(Pages静态页面 + '/admin');
                 let originalText = await originalResponse.text();
-                
+
                 // 解决前端优选功能 CORS 问题：替换请求 URL 为 Worker 代理路径
                 originalText = originalText.replace(/https:\/\/cf\.090227\.xyz/g, '/admin/proxy/cf');
 
@@ -435,7 +435,7 @@ export default {
                 })();
                 </script>
                 `;
-                
+
                 return new Response(originalText.replace('</body>', chainProxyScript + '</body>'), {
                     status: 200,
                     headers: { 'Content-Type': 'text/html; charset=utf-8' }
@@ -552,14 +552,14 @@ export default {
                             }
 
                             const normalNode = `${协议类型}://00000000-0000-4000-8000-000000000000@${节点地址}:${节点端口}?security=tls&type=${config_JSON.传输协议}&host=example.com&sni=example.com&path=${encodeURIComponent(config_JSON.随机路径 ? 随机路径() + 节点路径 : 节点路径) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent(节点备注)}`;
-                            
+
                             // 如果启用了 SOCKS5，额外生成一个链式节点
                             if (config_JSON.反代.SOCKS5.账号) {
                                 const chainPath = `/${config_JSON.反代.SOCKS5.启用}=${config_JSON.反代.SOCKS5.账号}/proxyip=${节点地址}:${节点端口}`;
                                 const chainNode = `${协议类型}://00000000-0000-4000-8000-000000000000@${host}:443?security=tls&type=${config_JSON.传输协议}&host=${host}&sni=${host}&path=${encodeURIComponent(chainPath) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent('🔗 ' + 节点备注 + ' -> 家宽')}`;
                                 return [normalNode, chainNode].join('\n');
                             }
-                            
+
                             return normalNode;
                         }).filter(item => item !== null).join('\n');
                     } else { // 订阅转换
@@ -1057,7 +1057,7 @@ function surge(content, url, config_JSON) {
     const 每行内容 = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
 
     let 输出内容 = "";
-	let realSurgePath = config_JSON.启用0RTT ? config_JSON.PATH + '?ed=2560' : config_JSON.PATH;
+    let realSurgePath = config_JSON.启用0RTT ? config_JSON.PATH + '?ed=2560' : config_JSON.PATH;
     for (let x of 每行内容) {
         if (x.includes('= tro' + 'jan,')) {
             const host = x.split("sni=")[1].split(",")[0];
@@ -1211,19 +1211,19 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
         const newLines = [];
         const cfNodeNames = []; // 存储所有检测到的 CF 节点名称
         const userNodes = 链式代理配置.中转节点列表 || [];
-        
+
         let inProxies = false;
         let inGroups = false;
         let userNodesInjected = false;
         let customGroupsInjected = false;
         let mainGroupModified = false;
-        
+
         // 辅助：生成落地节点（用户家宽IP）配置，带 dialer-proxy 指向中转组
         const generateLandingNodeYaml = (node, transitGroupName) => {
             const nodeYamlLines = [];
             // 将节点名称标记为落地
             const nodeName = node.name;
-            
+
             if (node.type === 'socks5') {
                 nodeYamlLines.push(`  - name: "${nodeName}"`);
                 nodeYamlLines.push(`    type: socks5`);
@@ -1246,14 +1246,14 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
                 nodeYamlLines.push(`    port: ${node.port}`);
                 for (const [key, value] of Object.entries(node)) {
                     if (!['name', 'type', 'server', 'port'].includes(key) && value !== undefined && value !== null) {
-                         if (typeof value === 'object') {
-                             nodeYamlLines.push(`    ${key}:`);
-                             for (const [subKey, subValue] of Object.entries(value)) {
-                                 nodeYamlLines.push(`      ${subKey}: ${JSON.stringify(subValue)}`);
-                             }
-                         } else {
-                             nodeYamlLines.push(`    ${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`);
-                         }
+                        if (typeof value === 'object') {
+                            nodeYamlLines.push(`    ${key}:`);
+                            for (const [subKey, subValue] of Object.entries(value)) {
+                                nodeYamlLines.push(`      ${subKey}: ${JSON.stringify(subValue)}`);
+                            }
+                        } else {
+                            nodeYamlLines.push(`    ${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`);
+                        }
                     }
                 }
             }
@@ -1265,7 +1265,7 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
         // 辅助：生成新策略组
         const generateNewGroups = (landingNodes, transitNodes) => {
             const groupsLines = [];
-            
+
             // 1. 生成“🔗 链式模式”组：包含所有落地节点（用户家宽IP）
             // 用户选择此模式 -> 选择落地IP -> 自动经过中转
             if (landingNodes.length > 0) {
@@ -1289,14 +1289,14 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
                     groupsLines.push(`      - "${name}"`);
                 }
             }
-            
+
             return groupsLines;
         };
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const trimmed = line.trim();
-            
+
             // 检测顶级段落
             if (!line.startsWith(' ') && !line.startsWith('\t') && trimmed.endsWith(':')) {
                 if (trimmed === 'proxies:') {
@@ -1324,7 +1324,7 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
                     inGroups = false;
                 }
             }
-            
+
             // 收集 CF 节点名称
             if (inProxies) {
                 let name = null;
@@ -1337,7 +1337,7 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
                     const match = trimmed.match(/name:\s*["']?([^,"'}]+)["']?/);
                     if (match) name = match[1];
                 }
-                
+
                 // 排除用户节点（如果是重复运行或 update）
                 if (name && !userNodes.some(n => n.name === name)) {
                     cfNodeNames.push(name);
@@ -1354,7 +1354,7 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
                     mainGroupModified = false;
                 }
             }
-            
+
             // 向主策略组注入“🔗 链式模式”选项
             if (inGroups && mainGroupModified && trimmed === 'proxies:') {
                 newLines.push(line);
@@ -1366,12 +1366,12 @@ function 添加链式代理到Clash订阅(yamlContent, 链式代理配置) {
 
             newLines.push(line);
         }
-        
+
         // 如果文件结束还没注入新组（防止没有 rules 段落的情况）
         if (!customGroupsInjected && userNodes.length > 0) {
-             newLines.push(...generateNewGroups(userNodes, cfNodeNames));
+            newLines.push(...generateNewGroups(userNodes, cfNodeNames));
         }
-        
+
         return newLines.join('\n');
     } catch (error) {
         console.error('添加链式代理到Clash订阅失败:', error);

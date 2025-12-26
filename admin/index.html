@@ -8993,7 +8993,8 @@ vless://7b102311-43fd-4e8f-977e-8090623c101d@edt-pages.github.io:443?security=tl
         // 显示国家结果
         function showCountryResults(country, showAll = false) {
             const contentContainer = document.getElementById('optimizeResultsContent');
-            const results = optimizeResults[country] || [];
+            // 使用全局变量，确保模态框关闭后重新打开时数据仍然可用
+            const results = (window.optimizeResults && window.optimizeResults[country]) || optimizeResults[country] || [];
 
             if (results.length === 0) {
                 contentContainer.innerHTML = '<div style="text-align: center; color: #6b7280;">暂无数据</div>';
@@ -10070,6 +10071,11 @@ vless://7b102311-43fd-4e8f-977e-8090623c101d@edt-pages.github.io:443?security=tl
 
             // 增强保存提示UI
             function enhanceSaveTipUI() {
+                // 检查是否已经添加过UI，防止重复
+                if (document.querySelector('.ip-save-options')) {
+                    return;
+                }
+
                 const saveTip = document.querySelector('.save-tip');
                 if (!saveTip) {
                     setTimeout(enhanceSaveTipUI, 500);

@@ -9895,12 +9895,16 @@ vless://7b102311-43fd-4e8f-977e-8090623c101d@edt-pages.github.io:443?security=tl
             // 增强版 showCountryResults - 添加单个IP导入按钮
             window.showCountryResults = function (country, showAll = false) {
                 const contentContainer = document.getElementById('optimizeResultsContent');
-                const results = window.optimizeResults[country] || [];
 
-                if (results.length === 0) {
-                    contentContainer.innerHTML = '<div style="text-align: center; color: #6b7280;">暂无数据</div>';
+                // 安全检查 - 确保 optimizeResults 存在
+                if (!window.optimizeResults || !window.optimizeResults[country]) {
+                    if (contentContainer) {
+                        contentContainer.innerHTML = '<div style="text-align: center; color: #6b7280;">暂无数据</div>';
+                    }
                     return;
                 }
+
+                const results = window.optimizeResults[country];
 
                 const displayCount = showAll ? results.length : Math.min(16, results.length);
                 const displayResults = results.slice(0, displayCount);

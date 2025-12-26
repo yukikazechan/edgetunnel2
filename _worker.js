@@ -452,7 +452,7 @@ export default {
                     status: 200,
                     headers: {
                         'Content-Type': 'text/html; charset=utf-8',
-                        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https:; frame-src 'self'"
+                        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https:; frame-src 'self'"
                     }
                 });
             } else if (访问路径 === 'logout') {//清除cookie并跳转到登录页面

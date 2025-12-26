@@ -281,6 +281,13 @@ export default {
                             console.error('保存链式代理配置失败:', error);
                             return new Response(JSON.stringify({ error: '保存链式代理配置失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         }
+                    } else if (访问路径 === 'api/ip') {
+                        return new Response(JSON.stringify({
+                            ip: request.headers.get('cf-connecting-ip'),
+                            country: request.cf.country,
+                            org: request.cf.asOrganization,
+                            asOrganization: request.cf.asOrganization
+                        }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                     } else if (访问路径 === 'admin/api/users/list') { // 获取用户列表
                         const users = await env.KV.get('users.json') || '[]';
                         return new Response(users, { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });

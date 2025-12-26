@@ -109,8 +109,7 @@ export default {
                     }
                 }
                 return fetch(Pages静态页面 + '/login');
-            } else if (访问路径 === 'api/ip' || 访问路径 === 'admin/api/ip') { // API/IP 接口 (获取真实出口IP)
-            } else if (访问路径 === 'api/ip' || 访问路径 === 'admin/api/ip') { // API/IP 接口
+            } else if (url.pathname.endsWith('/api/ip')) { // API/IP 接口 - 使用 endsWith 确保匹配
                 const ip = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for') || '未知';
                 return new Response(JSON.stringify({
                     ip: ip,

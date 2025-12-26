@@ -118,7 +118,8 @@ export default {
                 if (访问路径 === 'admin/log.json') {// 读取日志内容
                     // 隔离用户暂不支持查看日志，或者查看独立日志？暂且使用全局日志或屏蔽
                     // 如果要隔离日志，需要修改 Log key。暂时保持全局
-                    const 读取日志内容 = await env.KV.get('log.json') || '[]';
+                    const logKey = targetUUID === userID ? 'log.json' : `log_${targetUUID}.json`;
+                    const 读取日志内容 = await env.KV.get(logKey) || '[]';
                     return new Response(读取日志内容, { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                 } else if (区分大小写访问路径 === 'admin/getCloudflareUsage') {// 查询请求量
                     try {
@@ -339,7 +340,8 @@ export default {
                     }
                 } else if (访问路径 === 'admin/chain-proxy.json') {// 读取链式代理配置
                     try {
-                        const chainProxyTxt = await env.KV.get('chain-proxy.json');
+                        const loadKey = targetUUID === userID ? 'chain-proxy.json' : `chain-proxy_${targetUUID}.json`;
+                        const chainProxyTxt = await env.KV.get(loadKey);
                         if (!chainProxyTxt) {
                             // 返回默认配置
                             const defaultChainProxy = {
@@ -1190,10 +1192,18 @@ function surge(content, url, config_JSON) {
 async function 请求日志记录(env, request, 访问IP, 请求类型 = "Get_SUB", config_JSON) {
     const KV容量限制 = 4;//MB
     try {
+        const userID = config_JSON.UUID || '00000000-0000-4000-8000-000000000000';
+        let logKey = 'log.json';
+        let tgKey = 'tg.json';
+        if (env.UUID && userID !== env.UUID && userID !== '00000000-0000-4000-8000-000000000000') {
+            logKey = `log_${userID}.json`;
+            tgKey = `tg_${userID}.json`;
+        }
+
         const 当前时间 = new Date();
         const 日志内容 = { TYPE: 请求类型, IP: 访问IP, ASN: `AS${request.cf.asn || '0'} ${request.cf.asOrganization || 'Unknown'}`, CC: `${request.cf.country || 'N/A'} ${request.cf.city || 'N/A'}`, URL: request.url, UA: request.headers.get('User-Agent') || 'Unknown', TIME: 当前时间.getTime() };
         let 日志数组 = [];
-        const 现有日志 = await env.KV.get('log.json');
+        const 现有日志 = await env.KV.get(logKey);
         if (现有日志) {
             try {
                 日志数组 = JSON.parse(现有日志);
@@ -1209,14 +1219,14 @@ async function 请求日志记录(env, request, 访问IP, 请求类型 = "Get_SU
                 }
                 if (config_JSON.TG.启用) {
                     try {
-                        const TG_TXT = await env.KV.get('tg.json');
+                        const TG_TXT = await env.KV.get(tgKey);
                         const TG_JSON = JSON.parse(TG_TXT);
                         await sendMessage(TG_JSON.BotToken, TG_JSON.ChatID, 日志内容, config_JSON);
                     } catch (error) { console.error(`读取tg.json出错: ${error.message}`) }
                 }
             } catch (e) { 日志数组 = [日志内容]; }
         } else { 日志数组 = [日志内容]; }
-        await env.KV.put('log.json', JSON.stringify(日志数组, null, 2));
+        await env.KV.put(logKey, JSON.stringify(日志数组, null, 2));
     } catch (error) { console.error(`日志记录失败: ${error.message}`); }
 }
 

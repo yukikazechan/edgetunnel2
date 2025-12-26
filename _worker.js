@@ -260,12 +260,9 @@ export default {
 
                 ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));
 
-                // 优先从 KV 读取自托管的 admin.html，如果没有则从外部 Pages 获取
-                let originalText = await env.KV.get('admin.html');
-                if (!originalText) {
-                    const originalResponse = await fetch(Pages静态页面 + '/');
-                    originalText = await originalResponse.text();
-                }
+                // 从 Pages 获取管理页面
+                const originalResponse = await fetch(Pages静态页面 + '/');
+                let originalText = await originalResponse.text();
 
                 // 解决前端优选功能 CORS 问题：替换请求 URL 为 Worker 代理路径
                 originalText = originalText.replace(/https:\/\/cf\.090227\.xyz/g, '/admin/proxy/cf');

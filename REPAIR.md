@@ -7,6 +7,7 @@
 
 1. 保留现有 `UUID` 环境变量（标准 v4 UUID）和管理员密码 `ADMIN`，继续绑定原有 `KV`。兼容旧的 `sub` 绑定名；同时存在时优先使用 `KV`。
 2. Worker 名称为 `edgetunnel2pro`。`keep_vars = true` 保留已有变量；部署前确认 `wrangler.toml` 的 KV ID 对应当前绑定，避免连到另一份配置。
+   兼容日期沿用上游的 `2025-11-04`，`no_bundle = true` 直接发布已验证的单文件产物。
 3. 登录 `/admin`，打开“🔗 链式代理设置”，添加落地节点并保存。支持 SOCKS5、HTTP（TLS 可选）、VLESS、VMess、Trojan、Shadowsocks。高级传输参数可通过 JSON 编辑。
 4. 更新 Clash Meta / Mihomo 订阅，在主策略组选择“🔗 链式模式”，再选择落地节点及“🛫 链式中转”中的 CF 节点。启用后链式模式排在主策略组首位；客户端已有选择可能仍会保留。
 

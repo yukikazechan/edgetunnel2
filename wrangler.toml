@@ -1,8 +1,13 @@
 name = "edgetunnel2pro"
-main = "_worker.js"
+main = "diagnostic-entry.js"
 compatibility_date = "2025-11-04"
 keep_vars = true
 no_bundle = true
+find_additional_modules = true
+
+[[rules]]
+type = "ESModule"
+globs = ["_worker.js"]
 
 [observability]
 enabled = true

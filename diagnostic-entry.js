@@ -1,10 +1,9 @@
-import worker from './_worker.js';
-
 // Temporary production probe: no URL, headers, credentials or request bodies are logged.
 export default {
     async fetch(request, env, ctx) {
         console.error('[edgetunnel2 diagnostic] fetch entered');
         try {
+            const { default: worker } = await import('./_worker.js');
             return await worker.fetch(request, env, ctx);
         } catch (error) {
             console.error('[edgetunnel2 diagnostic] uncaught', error?.stack || error?.message || String(error));

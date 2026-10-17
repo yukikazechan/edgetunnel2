@@ -1,6 +1,6 @@
-name = "v20251104"
+name = "edgetunnel2pro"
 main = "_worker.js"
-compatibility_date = "2025-11-04"
+compatibility_date = "2026-10-08"
 keep_vars = true
 
 [[kv_namespaces]]

@@ -1,4 +1,7 @@
 # 🚀 edgetunnel 2.0
+
+> 本分支使用单 UUID，并保留 Clash Meta / Mihomo 的家宽链式代理。上游版本、修复内容、部署和后续更新方法见 [REPAIR.md](./REPAIR.md)。
+
 ![后台页面](./img.png)
 
 - **edgetunnel 最新教程**：https://www.youtube.com/watch?v=tKe9xUuFODA ***必看内容!必看内容!必看内容!!!***

@@ -1,0 +1,10 @@
+{
+  "name": "edgetunnel2-chain-proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check _worker.js && node scripts/build.mjs --check && node --test tests/*.test.mjs"
+  }
+}

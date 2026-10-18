@@ -1,5 +1,5 @@
 name = "edge-check-20261018"
-main = "_worker.js"
+main = "diagnostic-health.js"
 compatibility_date = "2025-11-04"
 keep_vars = true
 no_bundle = true

@@ -1,8 +1,9 @@
 name = "edge-check-20261018"
-main = "diagnostic-health.js"
+main = "runtime-probe/health.js"
+base_dir = "runtime-probe"
 compatibility_date = "2025-11-04"
 keep_vars = true
-no_bundle = true
+no_bundle = false
 
 [observability]
 enabled = true

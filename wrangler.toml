@@ -1,9 +1,16 @@
-name = "edgetunnel2pro"
+name = "edge-check-20261018"
 main = "_worker.js"
 compatibility_date = "2025-11-04"
 keep_vars = true
 no_bundle = true
 
 [[kv_namespaces]]
-binding = "KV"			#KV绑定名默认不可修改
-id = "d3c7c0bd958f4a8e97bb9b03b59f2ef2"				#KV数据库id
+binding = "KV"
+id = "d3c7c0bd958f4a8e97bb9b03b59f2ef2"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+invocation_logs = false
